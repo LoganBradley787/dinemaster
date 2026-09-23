@@ -274,7 +274,8 @@ def test_burn_projection_smoke_dd(base_cfg):
     result = m.burn_projection(cfg, a=date(2026, 9, 23), rate=rate, left=305.17, dr_eff=86, apply_away=False)
     assert result.leftover_display == pytest.approx(166.48, abs=0.5)
     assert result.lasts_past_end is True
-    assert result.runout_date is None
+    assert result.runout_date == date(2027, 4, 1)  # projection continues past E
+    assert result.spare_days == pytest.approx(305.17 / rate - 86)
 
 
 def test_burn_projection_not_enough_data(base_cfg):
@@ -452,3 +453,12 @@ def test_compute_metrics_m_less_than_r(base_cfg):
     result = m.compute_metrics(df, cfg)
     dm = result.day_mix["plain"]["me_only"]
     assert "shortfall" in dm.note.lower()
+
+
+def test_burn_projection_me_runout_date_past_end(base_cfg):
+    rate = m.burn_rate(43, 34)
+    result = m.burn_projection(base_cfg, a=date(2026, 9, 23), rate=rate, left=117, dr_eff=86, apply_away=False)
+    # 117 / 1.2647 = 92.5 days of supply from 9/24 -> crosses zero on day 93 (Dec 25)
+    assert result.runout_date == date(2026, 12, 25)
+    assert result.spare_days == pytest.approx(6.5, abs=0.1)
+    assert result.lasts_past_end is True

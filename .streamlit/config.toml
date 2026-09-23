@@ -1,0 +1,15 @@
+# DineMaster theme: UVA-ish navy + orange accents on a clean light background.
+[theme]
+base = "light"
+primaryColor = "#E57200"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F2F4F8"
+textColor = "#232D4B"
+font = "sans serif"
+
+[server]
+headless = true
+runOnSave = false
+
+[browser]
+gatherUsageStats = false

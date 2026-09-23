@@ -446,7 +446,7 @@ class RunOut:
     """
 
     date: date | None
-    spare_days: int | None
+    spare_days: float | None
     reason: str | None
 
 
@@ -493,12 +493,12 @@ class BurnResult:
     Fields:
         rate: units/day used so far (None if `burn_rate` returned None).
         runout_date: the day the balance is projected to cross 0, walking
-            forward from A+1 through E (skipping away days when
-            `apply_away`). None if it doesn't cross zero by E ("lasts past
-            end") or if `rate` is None.
-        spare_days: runout_date - semester_end (<= 0 when it runs out early).
+            forward from A+1 (skipping away days when `apply_away`), possibly
+            after E. None if `rate` is None or 0.
+        spare_days: fractional usable days of supply beyond the remaining
+            usable days (left/rate - dr_eff); negative = runs out early.
             None if runout_date is None.
-        lasts_past_end: True if the projection never reaches 0 by E.
+        lasts_past_end: True if runout_date is after E (or rate is 0).
         leftover_raw: left - rate * dr_eff (can be negative — a projected
             shortfall). None if rate is None.
         leftover_display: max(leftover_raw, 0) — what to show as "left over
@@ -513,7 +513,7 @@ class BurnResult:
 
     rate: float | None
     runout_date: date | None
-    spare_days: int | None
+    spare_days: float | None
     lasts_past_end: bool
     leftover_raw: float | None
     leftover_display: float | None
@@ -528,27 +528,26 @@ def burn_projection(cfg: Config, a: date, rate: float | None, left: float, dr_ef
         return BurnResult(None, None, None, False, None, None, None, "not enough data")
 
     e = cfg.semester_end
+    # Walk usable days until the balance crosses zero. Continues past E (away periods
+    # only exist inside the semester) so a surplus still yields a date and spare days.
     balance = left
-    runout = None
-    day = a + timedelta(days=1)
-    while day <= e:
-        if apply_away and cfg.is_away(day):
+    runout = a
+    if left > 0 and rate > 0:
+        day = a + timedelta(days=1)
+        while balance > 0:
+            if not (apply_away and cfg.is_away(day)):
+                balance -= rate
+                runout = day
             day += timedelta(days=1)
-            continue
-        balance -= rate
-        if balance <= 0:
-            runout = day
-            break
-        day += timedelta(days=1)
 
     leftover_raw = left - rate * dr_eff
     leftover_display = max(leftover_raw, 0.0)
     shortfall = max(-leftover_raw, 0.0)
-
-    if runout is None:
+    if rate <= 0:
         return BurnResult(rate, None, None, True, leftover_raw, leftover_display, shortfall, None)
-    spare = (runout - e).days
-    return BurnResult(rate, runout, spare, False, leftover_raw, leftover_display, shortfall, None)
+    # Fractional usable days the balance covers beyond (or short of) the remaining usable days.
+    spare = left / rate - dr_eff
+    return BurnResult(rate, runout, spare, runout > e, leftover_raw, leftover_display, shortfall, None)
 
 
 # Metric 4: day mix
