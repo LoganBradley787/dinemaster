@@ -1,0 +1,7 @@
+.DS_Store
+__pycache__/
+.venv/
+.pytest_cache/
+# personal transaction data never leaves this machine
+raw-data/
+data/

@@ -1,0 +1,53 @@
+# DineMaster configuration. Every value here is a default; the sidebar can override for a session.
+
+[semester]
+start = 2026-08-21        # first day (inclusive)
+end = 2026-12-18          # last day (inclusive)
+data_cutoff = 2026-08-01  # transactions before this date are ignored in metrics (plan loads post ~08-20)
+
+[plan]
+starting_me = 160
+starting_dd = 360.0       # $300 base + $60 promotional
+meal_price = 15.0         # assumed $ per meal paid in DD
+dd_rollover = false       # does unspent DD carry into spring?
+dd_leftover_flag = 15.0   # warn if projected DD leftover >= this and rollover is off
+
+[plan.dd_rounding]
+mode = "floor"            # floor | round | ceil
+granularity = 1.0         # meals; e.g. 0.5 for half-meal precision
+
+[away]
+exclude = true            # subtract enabled away periods from remaining days
+
+[[away.periods]]
+name = "Thanksgiving recess"
+start = 2026-11-25
+end = 2026-11-29
+enabled = true
+
+[classification]
+meal_threshold = 8.0      # DD purchase at a dining spot >= this is a meal; otherwise a snack
+# DD purchases at these locations are always snacks (regex, case-insensitive)
+snack_patterns = ["Gastons", "Supply 1819", "Vending", "Bodega"]
+load_patterns = ["^Deposit$"]          # plan loads / top-ups
+adjustment_patterns = ["(?i)revoke"]   # administrative, not usage
+
+[files]
+raw_dir = "raw-data"
+ledger_path = "data/ledger.csv"
+account_regex = "^(?P<account>.+?)_statement"   # applied to file name (without .csv)
+
+[files.columns]
+timestamp = "Date"
+description = "Description"
+amount = "Amount"
+balance = "Balance"
+
+# account -> pot; first regex match wins
+[[files.pots]]
+pattern = "(?i)meal"
+pot = "ME"
+
+[[files.pots]]
+pattern = "(?i)dining dollars"
+pot = "DD"
