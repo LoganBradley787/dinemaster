@@ -4,25 +4,33 @@ Recomputes everything from raw-data/ on every rerun (ingest is not cached —
 the data is tiny). Set the environment variable DINEMASTER_CONFIG to a path
 to an alternate config.toml (used by tests); raw_dir/ledger_path in that file
 are resolved relative to its own parent directory.
+
+Calendar files (`[calendar]` in config.toml) are merged into the config before
+the sidebar is built, so away periods found there get sidebar toggles like the
+configured ones and markers show on the balance and forecast charts.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import os
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from dinemaster import budget, compare, compare_charts, forecast_charts, habits, habits_charts, recap
 from dinemaster import charts as c
+from dinemaster import forecast as fcast
 from dinemaster import metrics as m
+from dinemaster.calendar_sync import CalendarResult, apply_calendar
 from dinemaster.config import ROOT, Config, load_config
 from dinemaster.export_links import build_links, latest_by_account
 from dinemaster.freshness import data_through
 from dinemaster.ingest import load_transactions
 from dinemaster.tiles import ago, build_page_html
+from dinemaster.tiles import chance as chance_text
 
 st.set_page_config(page_title="DineMaster", layout="wide")
 
@@ -41,6 +49,33 @@ def fmt(x: float | None, signed: bool = False, digits: int = 1, prefix: str = ""
 def esc(text: str) -> str:
     """Escape "$" so Streamlit markdown doesn't render dollar amounts as LaTeX."""
     return text.replace("$", "\\$")
+
+
+def short(d: date) -> str:
+    """'Oct 1' — a date without the year or a zero-padded day."""
+    return f"{d:%b} {d.day}"
+
+
+def _calendar_signature(cfg: Config) -> tuple:
+    """Changes whenever the config file or any local .ics file changes, so the cached calendar is redone."""
+    folder = cfg.calendar.ics_dir
+    files: tuple = ()
+    if folder is not None and folder.is_dir():
+        files = tuple((p.name, p.stat().st_mtime_ns, p.stat().st_size) for p in sorted(folder.glob("*.ics")))
+    return (str(_CONFIG_PATH), _CONFIG_PATH.stat().st_mtime_ns, files)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _calendar_merge(_cfg: Config, signature: tuple):
+    """`apply_calendar`, remembered for a few minutes so a slow or dead feed isn't retried on every rerun."""
+    merged, result = apply_calendar(_cfg)
+    return merged.away_periods, merged.markers, result
+
+
+def with_calendar(base_cfg: Config) -> tuple[Config, CalendarResult]:
+    """`base_cfg` plus the calendar's away periods and chart markers, and what the calendars offered."""
+    away_periods, markers, result = _calendar_merge(base_cfg, _calendar_signature(base_cfg))
+    return dataclasses.replace(base_cfg, away_periods=away_periods, markers=markers), result
 
 
 def side_by_side(rows: dict[str, tuple[str, str]]) -> pd.DataFrame:
@@ -83,10 +118,14 @@ def sidebar_config(base_cfg: Config) -> Config:
         if not base_cfg.away_periods:
             st.caption("None configured.")
         for i, period in enumerate(base_cfg.away_periods):
-            st.markdown(f"**{period.name}**")
-            enabled = st.checkbox("Enabled", value=period.enabled, key=f"away_enabled_{i}")
-            start = st.date_input("Start", period.start, key=f"away_start_{i}")
-            end = st.date_input("End", period.end, key=f"away_end_{i}")
+            from_calendar = " · from calendar" if period.source == "calendar" else ""
+            st.markdown(esc(f"**{period.name}**{from_calendar}"))
+            # Calendar periods come and go as .ics files change, so their widgets are keyed by their
+            # dates rather than by position (a position key would hand one period another's edits).
+            key = f"cal_{period.start}_{period.end}" if period.source == "calendar" else str(i)
+            enabled = st.checkbox("Enabled", value=period.enabled, key=f"away_enabled_{key}")
+            start = st.date_input("Start", period.start, key=f"away_start_{key}")
+            end = st.date_input("End", period.end, key=f"away_end_{key}")
             away_periods.append(dataclasses.replace(period, enabled=enabled, start=start, end=end))
 
     return dataclasses.replace(
@@ -150,7 +189,344 @@ def tiles_page(cfg: Config, df: pd.DataFrame) -> None:
     st.html(build_page_html(cfg, df, date.today()))
 
 
-def main(cfg: Config, df: pd.DataFrame, report) -> None:
+def forecast_tab(cfg: Config, daily: pd.DataFrame, fc: fcast.Forecast) -> None:
+    """Day-of-week view plus where each pot is likely headed."""
+    profile, o = fc.profile, fc.observed_through
+    no_history = profile.attrs.get("reason")
+    if no_history:
+        st.info(f"No forecast yet: {no_history}.")
+
+    st.markdown("#### Your week, day by day")
+    st.plotly_chart(forecast_charts.weekday_profile_chart(profile), width="stretch")
+    if not no_history:
+        rates = profile.set_index("weekday")["meals_rate"]
+        if rates.sum() > 0:
+            heavy = [day for day, r in rates.items() if r >= rates.max() - 0.005]
+            light = [day for day, r in rates.items() if r <= rates.min() + 0.005]
+            if rates.max() - rates.min() > 0.01:
+                st.markdown(
+                    f"**{' and '.join(heavy)}** {'is' if len(heavy) == 1 else 'are'} your heaviest "
+                    f"(about {rates.max():.2f} meals a day); **{' and '.join(light)}** "
+                    f"{'is' if len(light) == 1 else 'are'} the lightest ({rates.min():.2f}). "
+                    "The forecast below and the Daily plan tab both follow this pattern."
+                )
+        table = pd.DataFrame(
+            {
+                "Day": profile["weekday"],
+                "Days observed": profile["days"],
+                "Meals / day": profile["meals_avg"],
+                "ME swipes / day": profile["me_avg"],
+                "DD meals / day": profile["dd_meals_avg"],
+                "DD $ / day": profile["dd_spend_avg"],
+                "Snack $ / day": profile["dd_snack_avg"],
+                "Forecast meals / day": profile["meals_rate"],
+                "Forecast DD $ / day": profile["dd_spend_rate"],
+                "Share of week": profile["share"] * 100,
+            }
+        )
+        two, usd, pct = (st.column_config.NumberColumn(format=f) for f in ("%.2f", "$%.2f", "%.0f%%"))
+        st.dataframe(
+            table,
+            width="stretch",
+            hide_index=True,
+            column_config={
+                "Meals / day": two, "ME swipes / day": two, "DD meals / day": two, "Forecast meals / day": two,
+                "DD $ / day": usd, "Snack $ / day": usd, "Forecast DD $ / day": usd, "Share of week": pct,
+            },
+        )  # fmt: skip
+        away_note = " Away days are left out." if cfg.exclude_away else ""
+        st.caption(
+            f"Observed: {short(max(cfg.semester_start, cfg.data_cutoff))} – {short(o)} "
+            f"({profile.attrs.get('observed_days', 0)} days).{away_note} The left columns are plain averages of "
+            "those days. The forecast columns weigh recent weeks more (a day "
+            f"{cfg.forecast.half_life_days:g} days old counts half) and pull a weekday with few "
+            "observations toward your overall average."
+        )
+
+    st.markdown("#### Where each pot is headed")
+    if o < cfg.semester_end:
+        st.caption(
+            f"Solid line: what the data shows, through {short(o)}. Dashed line and band: forecast for "
+            f"{short(o + timedelta(days=1))} – {short(cfg.semester_end)}, where each future day behaves like past "
+            f"days of the same weekday. The band is the middle {fc.band[1] - fc.band[0]:g}% of "
+            f"{fc.simulations:,} simulated semesters."
+        )
+    seen = daily[daily.index <= o]
+    pots = (
+        (fc.me, seen["me_bal"], "Meal exchanges — forecast", "meals", "Meal exchanges", lambda x: f"{x:.0f}"),
+        (fc.dd, seen["dd_bal"], "Dining dollars — forecast", "$", "Dining dollars", lambda x: f"${x:,.0f}"),
+    )
+    for pf, actual, title, unit, noun, amount in pots:
+        st.plotly_chart(c.add_markers(forecast_charts.forecast_chart(pf, actual, cfg, title, unit), cfg), width="stretch")
+        if not pf.available:
+            st.caption(f"{noun}: no forecast — {pf.reason}.")
+            continue
+        chance, leftover, runout = st.columns(3)
+        chance.metric(f"Chance {noun.lower()} last", chance_text(pf.prob_lasts))  # same wording as the tiles
+        leftover.metric(
+            f"Likely left on {short(cfg.semester_end)}",
+            esc(f"{amount(pf.leftover_lo)} – {amount(pf.leftover_hi)}"),  # metric values are markdown: "$a – $b" would be math
+            esc(f"middle estimate {amount(pf.leftover_p50)}"),
+            delta_color="off",
+        )
+        if pf.runout_p50 is not None:
+            runout.metric(
+                "If they run out, likely",
+                f"{short(pf.runout_lo)} – {short(pf.runout_hi)}",
+                f"most often around {short(pf.runout_p50)}",
+                delta_color="off",
+            )
+        else:
+            runout.metric("Run-out before semester end", "Unlikely", "under 1 in 20 simulations", delta_color="off")
+        if pf.reason:
+            st.caption(f"Note: {pf.reason}.")
+
+
+def plan_tab(cfg: Config, fc: fcast.Forecast) -> None:
+    """A meal count for every remaining day, weighted by weekday, plus the spend-down pace."""
+    o, profile = fc.observed_through, fc.profile
+    start = o + timedelta(days=1)
+    me_left, dd_left = fc.me.start_balance, fc.dd.start_balance
+    today = cfg.as_of
+
+    mode = st.radio("Plan with", ["Exchanges + dining dollars", "Exchanges only"], horizontal=True, key="plan_mode")
+    plan = budget.daily_budget(cfg, me_left, dd_left, profile, start, include_dd=mode != "Exchanges only")
+    info = plan.attrs
+
+    st.subheader(budget.today_line(plan, today))
+    if plan.empty or info["reason"]:
+        st.caption(f"Nothing to plan: {info['reason']}.")
+    else:
+        parts = f"{info['me_meals']} exchanges"
+        if info["include_dd"]:
+            parts += f" + {info['dd_meals']} meals from dining dollars"
+        pattern = "spread evenly (no weekday pattern yet)" if info["uniform"] else "more on your usual heavy days"
+        st.caption(
+            f"{info['total']} meals to use ({parts}) over {info['usable_days']} days, "
+            f"{short(plan.index[0])} – {short(plan.index[-1])}: {pattern}, never more than {info['cap']} in a day."
+        )
+        if info["surplus"]:
+            st.warning(
+                f"Even at {info['cap']} meals every day, {info['surplus']} meals would go unused by semester end."
+            )
+        if (today - o).days > 1:
+            st.caption(
+                f"The data ends {short(o)}, so the plan starts {short(start)} and assumes nothing eaten since. "
+                "Update the data for a sharper plan."
+            )
+
+        first = max(today, plan.index[0])
+        fortnight = [d for d in (first + timedelta(days=i) for i in range(14)) if d <= plan.index[-1]]
+        if fortnight:
+            st.markdown("#### Next 14 days")
+            grid: dict[str, dict[str, str]] = {}
+            for d in fortnight:
+                row = grid.setdefault(f"Week of {short(d - timedelta(days=d.weekday()))}", dict.fromkeys(habits.WEEKDAYS, ""))
+                planned = "away" if plan.at[d, "away"] else str(int(plan.at[d, "meals"]))
+                row[habits.WEEKDAYS[d.weekday()]] = f"{short(d)} · {planned}"
+            st.table(pd.DataFrame.from_dict(grid, orient="index"))
+
+        st.markdown("#### The plan by day of the week")
+        usable = plan[~plan["away"]]
+        per_weekday = usable.groupby("weekday")["meals"].agg(["mean", "count"]).reindex(list(budget.WEEKDAY_NAMES))
+        usual = profile.set_index("weekday")["meals_rate"].reindex(list(budget.WEEKDAY_NAMES))
+        st.table(
+            pd.DataFrame(
+                {
+                    "Planned meals / day": [fmt(x, digits=1) if pd.notna(x) else "—" for x in per_weekday["mean"]],
+                    "Your usual meals / day": [fmt(x, digits=2) for x in usual.fillna(0.0)],
+                    "Days left": [str(int(n)) if pd.notna(n) else "0" for n in per_weekday["count"]],
+                },
+                index=habits.WEEKDAYS,
+            ).T
+        )
+        st.caption("Each remaining day gets a share in proportion to how much you usually eat on that weekday.")
+
+    st.markdown("#### Spend-down: both pots at zero on the last day")
+    sd = budget.spend_down(cfg, me_left, dd_left, profile, start)
+    st.markdown(esc(sd.sentence))
+    if sd.reason is None:
+        s1, s2, s3, s4, s5 = st.columns(5)
+        s1.metric("Exchanges / week", fmt(sd.exchanges_per_week))
+        s2.metric("DD meals / week", fmt(sd.dd_meals_per_week))
+        s3.metric("Meals / day", fmt(sd.meals_per_day, digits=2))
+        s4.metric("Set aside for snacks", fmt(sd.snack_reserve, digits=0, prefix="$"))
+        s5.metric("DD left unplanned", fmt(sd.dd_unallocated, digits=2, prefix="$"))
+        st.caption(
+            esc(
+                f"{sd.usable_days} usable days ({sd.weeks:.1f} weeks) through {short(sd.end)}. Of ${dd_left:,.2f} in "
+                f"dining dollars, about ${sd.snack_reserve:,.0f} is expected to go to snacks at your usual weekday "
+                f"rates, leaving ${sd.dd_for_meals:,.2f} for {sd.dd_meals} meals at ${cfg.meal_price:,.2f}. "
+                "The daily plan above turns every dining dollar into meals, so it counts more dining-dollar meals "
+                "than this does."
+            )
+        )
+
+
+def habits_tab(cfg: Config, df: pd.DataFrame) -> None:
+    """When and where meals happen, streaks, late nights, and a week-by-week recap."""
+    matrix = habits.hour_weekday_matrix(df, cfg)
+    st.plotly_chart(habits_charts.heatmap_chart(matrix), width="stretch")
+    slot = habits.busiest_slot(matrix)
+    if slot:
+        st.caption(f"Busiest slot: {slot[0]} around {habits.format_hour(slot[1])} ({slot[2]} meals so far).")
+
+    st.markdown("#### Streaks")
+    sk = habits.streaks(df, cfg)
+    if sk.reason:
+        st.caption(f"Nothing to show: {sk.reason}.")
+    else:
+
+        def run_metric(col, label: str, run: habits.Run, fallback: str) -> None:
+            col.metric(label, f"{run.length} day{'' if run.length == 1 else 's'}")
+            if run.length:
+                where = f"{run.place}, " if run.place else ""
+                col.caption(esc(f"{where}{short(run.start)} – {short(run.end)}"))
+            else:
+                col.caption(fallback)
+
+        c1, c2, c3, c4 = st.columns(4)
+        run_metric(c1, "Current meal streak", sk.current, f"no meal on {short(sk.observed_through)}")
+        run_metric(c2, "Longest meal streak", sk.meal_streak, "none yet")
+        run_metric(c3, "Longest gap without a meal", sk.gap, "no day without a meal")
+        run_metric(c4, "Longest run at one place", sk.same_place, "none yet")
+
+    st.markdown("#### Late night")
+    ln = habits.late_night(df, cfg)
+    window = f"{habits.format_hour(ln.start_hour)} – {habits.format_hour(ln.end_hour)}"
+    if ln.reason:
+        st.caption(f"Nothing to show: {ln.reason}.")
+    elif ln.count == 0:
+        st.caption(f"Nothing bought late at night ({window}) so far.")
+    else:
+        l1, l2, l3 = st.columns(3)
+        l1.metric("Late-night visits", f"{ln.count}", f"on {ln.nights} night{'' if ln.nights == 1 else 's'}", delta_color="off")
+        l2.metric("Dining dollars spent late", fmt(ln.dd_dollars, digits=2, prefix="$"))
+        l3.metric("Share of all DD spending", f"{ln.dd_share * 100:.0f}%" if ln.dd_share is not None else "n/a")
+        st.caption(
+            esc(
+                f"Late night is {window}: {ln.me_swipes} exchange swipes and {ln.dd_purchases} dining-dollar "
+                f"purchases, most often at {ln.top_place} ({ln.top_place_count})."
+            )
+        )
+
+    st.markdown("#### Places")
+    places = habits.place_stats(df, cfg)
+    st.plotly_chart(habits_charts.place_chart(places), width="stretch")
+    if not places.empty:
+        st.dataframe(
+            pd.DataFrame(
+                {
+                    "Place": places.index,
+                    "Visits": places["visits"].to_numpy(),
+                    "ME swipes": places["swipes"].to_numpy(),
+                    "DD meals": places["dd_meals"].to_numpy(),
+                    "DD snacks": places["dd_snacks"].to_numpy(),
+                    "DD spent": [f"${x:,.2f}" for x in places["dd_spend"]],
+                    "Usual time": [habits.format_hour(h) for h in places["typical_hour"]],
+                    "Favorite day": places["favorite_weekday"].to_numpy(),
+                }
+            ),
+            width="stretch",
+            hide_index=True,
+        )
+
+    st.markdown("#### Weekly recap")
+    weeks = recap.weeks_available(df, cfg)
+    if not weeks:
+        st.caption("No observed weeks yet.")
+        return
+    week = st.selectbox(
+        "Week",
+        weeks,
+        index=len(weeks) - 1,
+        format_func=lambda d: f"Week of {short(d)}" + (" (latest)" if d == weeks[-1] else ""),
+        key="recap_week",
+    )
+    r = recap.weekly_recap(df, cfg, week)
+    if r.reason:
+        st.caption(f"Nothing to show: {r.reason}.")
+        return
+    st.markdown("\n".join(f"- {esc(line)}" for line in r.lines))
+    st.caption(f"{short(r.start)} – {short(r.end)} ({r.days} of 7 days observed).")
+
+
+def compare_tab(cfg: Config, df: pd.DataFrame) -> None:
+    """This semester next to each past semester in the config's history."""
+    summaries = compare.semester_summaries(df, cfg)
+    if not cfg.history:
+        st.caption("No past semesters configured — add `[[history.semesters]]` entries to config.toml to compare.")
+
+    def per(usage: compare.PotUsage | None, field: str, money: bool) -> str:
+        value = getattr(usage, field) if usage is not None else None
+        if value is None:
+            return "—"
+        return f"${value:,.2f}" if money else (f"{value:.0f}" if field == "used" else f"{value:.2f}")
+
+    rows = []
+    for s in summaries:
+        covered = f"{short(s.covered_start)} – {short(s.covered_end)}" if s.covered_start else "—"
+        top = s.top_places[0] if s.top_places else None
+        has_dd = s.dd is not None
+        rows.append(
+            {
+                "Semester": s.name + (" (now)" if s.current else ""),
+                "Data covers": covered,
+                "Days covered": f"{s.covered_days} of {s.total_days}",
+                "ME swipes": per(s.me, "used", False),
+                "ME / day": per(s.me, "per_day", False),
+                "ME / week": per(s.me, "per_week", False),
+                "DD spent": per(s.dd, "used", True),
+                "DD / day": per(s.dd, "per_day", True),
+                "DD / week": per(s.dd, "per_week", True),
+                "DD meals": f"{s.dd_meal_count} (${s.dd_meal_amount:,.0f})" if has_dd else "—",
+                "DD snacks": f"{s.dd_snack_count} (${s.dd_snack_amount:,.0f})" if has_dd else "—",
+                "Top place": f"{top.place} ({top.visits})" if top else "—",
+            }
+        )
+    st.dataframe(pd.DataFrame(rows), width="stretch", hide_index=True)
+    for s in summaries:
+        if s.note:
+            st.caption(esc(f"**{s.name}** — {s.note}"))
+
+    st.plotly_chart(compare_charts.per_day_comparison_chart(summaries), width="stretch")
+    weekly = compare.weekly_usage(df, cfg)
+    for pot in compare.POTS:
+        st.plotly_chart(compare_charts.weekly_overlay_chart(weekly, pot), width="stretch")
+    st.caption("Hollow markers are part weeks (the edge of an export, or the week in progress), so they total fewer days.")
+
+
+def calendar_section(cfg: Config, cal: CalendarResult) -> None:
+    """Data tab: which calendars were read, what they contributed, and anything that went wrong."""
+    st.markdown("#### Calendar")
+    for w in cal.warnings:
+        st.warning(esc(f"Calendar: {w}"))
+    if not cal.sources:
+        where = f"`{cfg.calendar.ics_dir}`" if cfg.calendar.ics_dir else "the folder named by `[calendar] ics_dir`"
+        st.caption(
+            f"No calendars read. Drop `.ics` files into {where} (or list feed URLs in config.toml): events named "
+            "like a break or trip become away periods, and reading days and exams become chart markers."
+        )
+        return
+    st.caption("Read: " + ", ".join(f"`{name}`" for name in cal.sources))
+    merged = {(p.start, p.end) for p in cfg.away_periods if p.source == "calendar"}
+    found = [
+        {
+            "what": "away period",
+            "name": p.name,
+            "start": p.start,
+            "end": p.end,
+            "status": "added (toggle it in the sidebar)" if (p.start, p.end) in merged else "already covered by a configured period",
+        }
+        for p in cal.away
+    ] + [{"what": "chart marker", "name": mk.name, "start": mk.start, "end": mk.end, "status": "shown on balance charts"} for mk in cal.markers]
+    if found:
+        st.dataframe(pd.DataFrame(found), width="stretch", hide_index=True)
+    else:
+        st.caption("No events matched the away or marker patterns.")
+
+
+def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
     dc = m.day_counts(cfg)
     metrics = m.compute_metrics(df, cfg)
     bal = metrics.balances
@@ -200,10 +576,20 @@ def main(cfg: Config, df: pd.DataFrame, report) -> None:
     k5.metric("Pooled pace (ahead/behind)", fmt(pooled_delta, signed=True) + " meals" if pooled_delta is not None else "n/a")
 
     daily = m.daily(df, cfg)
+    fc = fcast.forecast(df, cfg)
 
-    tab_balances, tab_usage, tab_plan, tab_whatif, tab_data = st.tabs(
-        ["Balances", "Usage", "Plan math", "What-if", "Data"]
+    tab_balances, tab_forecast, tab_daily, tab_usage, tab_habits, tab_compare, tab_plan, tab_whatif, tab_data = st.tabs(
+        ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan math", "What-if", "Data"]
     )
+
+    with tab_forecast:
+        forecast_tab(cfg, daily, fc)
+    with tab_daily:
+        plan_tab(cfg, fc)
+    with tab_habits:
+        habits_tab(cfg, df)
+    with tab_compare:
+        compare_tab(cfg, df)
 
     # --- Balances tab ---------------------------------------------------
     with tab_balances:
@@ -408,6 +794,8 @@ def main(cfg: Config, df: pd.DataFrame, report) -> None:
             for w in report.warnings:
                 st.write(f"- {w}")
 
+        calendar_section(cfg, cal)
+
         st.markdown("#### Chain breaks")
         if report.chain_breaks:
             st.dataframe(pd.DataFrame(report.chain_breaks), width="stretch", hide_index=True)
@@ -461,13 +849,18 @@ def main(cfg: Config, df: pd.DataFrame, report) -> None:
 
 def run() -> None:
     # Sidebar and ingest live in the entrypoint so both pages share the same settings and data.
-    base_cfg = load_config(_CONFIG_PATH, root=_CONFIG_ROOT)
+    # The calendar is merged in first so its away periods get their own toggles in the sidebar.
+    base_cfg, cal = with_calendar(load_config(_CONFIG_PATH, root=_CONFIG_ROOT))
     cfg = sidebar_config(base_cfg)
-    st.sidebar.button("Reload data", help="Re-scan raw-data/ (a rerun already re-ingests automatically).")
+    st.sidebar.button(
+        "Reload data",
+        help="Re-scan raw-data/ and re-read the calendars (a rerun already re-ingests automatically).",
+        on_click=_calendar_merge.clear,
+    )
     df, report = load_transactions(cfg)
 
     def dashboard() -> None:
-        main(cfg, df, report)
+        main(cfg, df, report, cal)
 
     def tiles() -> None:
         tiles_page(cfg, df)

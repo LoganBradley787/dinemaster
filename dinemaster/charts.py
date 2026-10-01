@@ -12,7 +12,9 @@ Color convention (kept consistent across every chart):
     ideal gray, dashed reference line for pace
     projection    same color as the series it projects, dashed
 Charts show the full semester on the x-axis (S..E), mark "today" (as-of) and
-semester end with vertical lines, and shade enabled away periods.
+semester end with vertical lines, and shade enabled away periods. Balance
+charts also carry the calendar markers in ``cfg.markers`` (reading days,
+exams) as thin labelled bands — see ``add_markers``.
 """
 
 from __future__ import annotations
@@ -32,6 +34,9 @@ COLORS = {
     "snack": "#F2C29A",
     "avg": "#5B7FBD",
 }
+
+# Calendar markers (reading days, exams): a muted purple that is neither pot's color nor the away shading.
+MARKER_COLOR = "#6B4E9B"
 
 _LAYOUT_MARGIN = dict(l=10, r=10, t=40, b=10)
 
@@ -78,6 +83,39 @@ def _add_calendar_refs(fig: go.Figure, cfg: Config, a: date) -> None:
         )
 
 
+def add_markers(fig: go.Figure, cfg: Config) -> go.Figure:
+    """Draw `cfg.markers` (calendar notes such as reading days and exams) on a date-axis figure.
+
+    A one-day marker is a thin dotted line, a longer one a faint band; each is labelled with its
+    name along the bottom of the plot (away periods and the today / semester-end lines are
+    labelled along the top). Labels of successive markers alternate between two heights so
+    neighbours such as "Reading Days" and "Final Exams" stay readable. Markers entirely outside
+    the semester are skipped. Purely decorative: markers never affect day counting.
+
+    Returns the same figure, so it can wrap a builder from another module:
+    `add_markers(forecast_chart(...), cfg)`.
+    """
+    shown = [mk for mk in cfg.markers if mk.end >= cfg.semester_start and mk.start <= cfg.semester_end]
+    for i, marker in enumerate(sorted(shown, key=lambda mk: (mk.start, mk.end, mk.name))):
+        label = dict(
+            annotation_text=marker.name,
+            annotation_font=dict(size=10, color=MARKER_COLOR),
+            annotation_yshift=14 * (i % 2),
+        )
+        if marker.start == marker.end:
+            fig.add_vline(
+                x=marker.start.isoformat(), line_width=1, line_dash="dot", line_color=MARKER_COLOR,
+                annotation_position="bottom right", **label,
+            )
+        else:
+            fig.add_vrect(
+                x0=marker.start.isoformat(), x1=marker.end.isoformat(),
+                fillcolor=MARKER_COLOR, opacity=0.12, line_width=0,
+                annotation_position="bottom left", **label,
+            )
+    return fig
+
+
 def balance_chart(
     cfg: Config,
     a: date,
@@ -93,6 +131,7 @@ def balance_chart(
     `actual` is indexed S..A (or a subset), `ideal` S..E, `projection` (if
     given) A..min(run-out, E). Values are whatever unit the caller wants
     (dollars or meal-equivalents) — this function only styles them.
+    Calendar markers in `cfg.markers` are drawn too (see `add_markers`).
     """
     fig = go.Figure()
     fig.add_trace(
@@ -128,6 +167,7 @@ def balance_chart(
             )
         )
     _add_calendar_refs(fig, cfg, a)
+    add_markers(fig, cfg)
     fig.update_xaxes(range=[cfg.semester_start.isoformat(), cfg.semester_end.isoformat()], title="Date")
     fig.update_yaxes(title=y_title, rangemode="tozero")
     return _base_layout(fig, title)
