@@ -6,6 +6,8 @@ A local dashboard that tracks a UVA dining plan (meal exchanges + dining dollars
 uv run streamlit run app.py
 ```
 
+The sidebar switches between two pages: **Dashboard** (charts and the full math) and **Tiles** (a Windows 8 Start-screen-style summary in plain sentences).
+
 ## Updating data
 1. Export each plan account's statement as CSV (any date range; overlap is fine).
 2. Drop the files into `raw-data/`.

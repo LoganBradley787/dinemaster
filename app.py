@@ -21,6 +21,7 @@ from dinemaster import metrics as m
 from dinemaster.config import ROOT, Config, load_config
 from dinemaster.export_links import build_links, latest_by_account
 from dinemaster.ingest import load_transactions
+from dinemaster.tiles import build_groups, render_html
 
 st.set_page_config(page_title="DineMaster", layout="wide")
 
@@ -141,12 +142,18 @@ def update_data_panel(cfg, df: pd.DataFrame) -> None:
                 )
 
 
-def main() -> None:
-    base_cfg = load_config(_CONFIG_PATH, root=_CONFIG_ROOT)
-    cfg = sidebar_config(base_cfg)
-    st.sidebar.button("Reload data", help="Re-scan raw-data/ (a rerun already re-ingests automatically).")
+def tiles_page(cfg: Config, df: pd.DataFrame) -> None:
+    """Metro-style summary: the same metrics as the dashboard, as plain-sentence tiles."""
+    metrics = m.compute_metrics(df, cfg)
+    dc = metrics.day_counts
+    if df.empty:
+        st.info(f"No dining data found yet. Drop your statement CSV exports into `{cfg.raw_dir}` and reload.")
+        return
+    groups = build_groups(metrics, cfg, df, m.daily(df, cfg), date.today())
+    st.html(render_html(groups, "Dining", f"as of {dc.a:%A, %b} {dc.a.day}"))
 
-    df, report = load_transactions(cfg)
+
+def main(cfg: Config, df: pd.DataFrame, report) -> None:
     dc = m.day_counts(cfg)
     metrics = m.compute_metrics(df, cfg)
     bal = metrics.balances
@@ -455,4 +462,24 @@ def main() -> None:
             )
 
 
-main()
+def run() -> None:
+    # Sidebar and ingest live in the entrypoint so both pages share the same settings and data.
+    base_cfg = load_config(_CONFIG_PATH, root=_CONFIG_ROOT)
+    cfg = sidebar_config(base_cfg)
+    st.sidebar.button("Reload data", help="Re-scan raw-data/ (a rerun already re-ingests automatically).")
+    df, report = load_transactions(cfg)
+
+    def dashboard() -> None:
+        main(cfg, df, report)
+
+    def tiles() -> None:
+        tiles_page(cfg, df)
+
+    pages = [
+        st.Page(dashboard, title="Dashboard", icon=":material/monitoring:", default=True),
+        st.Page(tiles, title="Tiles", icon=":material/grid_view:", url_path="tiles"),
+    ]
+    st.navigation(pages).run()
+
+
+run()
