@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -18,6 +19,7 @@ import streamlit as st
 from dinemaster import charts as c
 from dinemaster import metrics as m
 from dinemaster.config import ROOT, Config, load_config
+from dinemaster.export_links import build_links, latest_by_account
 from dinemaster.ingest import load_transactions
 
 st.set_page_config(page_title="DineMaster", layout="wide")
@@ -104,6 +106,41 @@ def sidebar_config(base_cfg: Config) -> Config:
     )
 
 
+def update_data_panel(cfg, df: pd.DataFrame) -> None:
+    """Data-freshness line plus a generator for per-account statement links on the dining site."""
+    latest = latest_by_account(df)
+    today = date.today()
+    if latest:
+        newest = max(latest.values())
+        age = (today - newest).days
+        label = f"Update data — latest transaction {newest:%b %d} ({'today' if age == 0 else f'{age} days ago'})"
+    else:
+        label = "Update data — no transactions loaded yet"
+    with st.expander(label, expanded=False):
+        if latest:
+            st.caption(" · ".join(f"{name}: through {d:%b %d}" for name, d in sorted(latest.items())))
+        if not cfg.export.accounts:
+            st.caption(f"Drop new CSV exports into `{cfg.raw_dir}` and reload.")
+            return
+        pasted = st.text_input(
+            "Log in to the dining site, copy the URL of any page, and paste it here",
+            help="Only used to build the links below (it carries your login session); it is not saved anywhere.",
+        )
+        if pasted:
+            try:
+                links = build_links(pasted, cfg, latest, today)
+            except ValueError as err:
+                st.error(str(err))
+            else:
+                for col, link in zip(st.columns(len(links)), links):
+                    col.link_button(link.name, link.url, help=f"{link.start:%b %d} → {link.end:%b %d}")
+                st.caption(
+                    f"Each link opens that account's statement from its last known transaction through today. "
+                    f"Export each as CSV, drop the files into `{cfg.raw_dir}`, then reload this page. "
+                    "If a link says you're logged out, the session expired — paste a fresh URL."
+                )
+
+
 def main() -> None:
     base_cfg = load_config(_CONFIG_PATH, root=_CONFIG_ROOT)
     cfg = sidebar_config(base_cfg)
@@ -123,6 +160,8 @@ def main() -> None:
         "When the away toggle is on, enabled away-period days are subtracted "
         "from remaining (and elapsed) day counts."
     )
+
+    update_data_panel(cfg, df)
 
     # --- Alerts -----------------------------------------------------------
     raw_has_csvs = any(cfg.raw_dir.glob("*.csv")) if cfg.raw_dir.exists() else False

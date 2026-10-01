@@ -29,6 +29,22 @@ class PotRule:
 
 
 @dataclass(frozen=True)
+class ExportAccount:
+    name: str  # account name as it appears in export file names
+    acct: str  # the dining site's account number
+
+
+@dataclass(frozen=True)
+class ExportConfig:
+    statement_path: str = "/statementdetail.php"
+    session_params: tuple[str, ...] = ("cid", "skey")
+    start_param: str = "startdate"
+    end_param: str = "enddate"
+    account_param: str = "acct"
+    accounts: tuple[ExportAccount, ...] = ()
+
+
+@dataclass(frozen=True)
 class Config:
     semester_start: date
     semester_end: date
@@ -52,6 +68,7 @@ class Config:
     columns: dict[str, str] = field(hash=False)
     pots: tuple[PotRule, ...] = ()
     as_of: date = field(default_factory=date.today)
+    export: ExportConfig = ExportConfig()
 
     def round_meals(self, x: float) -> float:
         """Convert a fractional meal count to whole units of `rounding_granularity` using `rounding_mode`."""
@@ -72,6 +89,7 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
         c = tomllib.load(f)
     sem, plan, away, cls, files = c["semester"], c["plan"], c.get("away", {}), c["classification"], c["files"]
     rounding = plan.get("dd_rounding", {})
+    exp = c.get("export", {})
     return Config(
         semester_start=sem["start"],
         semester_end=sem["end"],
@@ -97,4 +115,12 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
         account_regex=files.get("account_regex", r"^(?P<account>.+?)_statement"),
         columns=dict(files["columns"]),
         pots=tuple(PotRule(p["pattern"], p["pot"]) for p in files.get("pots", [])),
+        export=ExportConfig(
+            statement_path=exp.get("statement_path", "/statementdetail.php"),
+            session_params=tuple(exp.get("session_params", ["cid", "skey"])),
+            start_param=exp.get("start_param", "startdate"),
+            end_param=exp.get("end_param", "enddate"),
+            account_param=exp.get("account_param", "acct"),
+            accounts=tuple(ExportAccount(a["name"], str(a["acct"])) for a in exp.get("accounts", [])),
+        ),
     )

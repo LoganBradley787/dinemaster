@@ -51,3 +51,25 @@ pot = "ME"
 [[files.pots]]
 pattern = "(?i)dining dollars"
 pot = "DD"
+
+# "Update data" link generator: paste any URL from the dining site while logged in and the
+# app builds one statement link per account (it reuses the session parameters from that URL).
+[export]
+statement_path = "/statementdetail.php"
+session_params = ["cid", "skey"]   # copied from the pasted URL; never stored
+start_param = "startdate"
+end_param = "enddate"
+account_param = "acct"
+
+# name must match the account name in the export file name; acct is the site's account number
+[[export.accounts]]
+name = "Block 160 Meals"
+acct = "22"
+
+[[export.accounts]]
+name = "Dining Dollars"
+acct = "4"
+
+[[export.accounts]]
+name = "Promotional Dining Dollars"
+acct = "8"
