@@ -48,8 +48,17 @@ def day(d: date) -> str:
     return f"{d:%b} {d.day}"
 
 
-def build_groups(metrics: Metrics, cfg: Config, df: pd.DataFrame, daily: pd.DataFrame, today: date) -> list[Group]:
-    """Tile groups for the current away setting (cfg.exclude_away)."""
+def ago(days: int) -> str:
+    return {0: "today", 1: "yesterday"}.get(days, f"{days} days ago")
+
+
+def build_groups(
+    metrics: Metrics, cfg: Config, df: pd.DataFrame, daily: pd.DataFrame, today: date, through: date | None = None
+) -> list[Group]:
+    """Tile groups for the current away setting (cfg.exclude_away).
+
+    `through` is the last day the exports cover (see freshness.data_through).
+    """
     v = "away" if cfg.exclude_away else "plain"
     dc, bal = metrics.day_counts, metrics.balances
     days_left = dc.dr_away if cfg.exclude_away else dc.dr
@@ -147,9 +156,9 @@ def build_groups(metrics: Metrics, cfg: Config, df: pd.DataFrame, daily: pd.Data
         habits.append(Tile("", money(bd.snack_amount), f"on {bd.snack_count} snack{'s' if bd.snack_count != 1 else ''}", ORANGE))
     if bd.meal_count:
         habits.append(Tile("", money(bd.meal_amount), f"on {bd.meal_count} DD meal{'s' if bd.meal_count != 1 else ''}", TEAL))
-    if not df.empty:
-        age = (today - df["date"].max()).days
-        habits.append(Tile("Data is", num(age, 0), "day old" if age == 1 else "days old", SLATE if age <= 3 else RED))
+    if through is not None:
+        age = (today - through).days
+        habits.append(Tile("Data covers through", day(through), ago(age), SLATE if age <= 3 else RED))
     upcoming = [p for p in cfg.away_periods if p.enabled and p.end >= dc.a]
     if cfg.exclude_away and upcoming:
         p = upcoming[0]

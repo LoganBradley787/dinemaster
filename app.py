@@ -20,8 +20,9 @@ from dinemaster import charts as c
 from dinemaster import metrics as m
 from dinemaster.config import ROOT, Config, load_config
 from dinemaster.export_links import build_links, latest_by_account
+from dinemaster.freshness import data_through
 from dinemaster.ingest import load_transactions
-from dinemaster.tiles import build_groups, render_html
+from dinemaster.tiles import ago, build_groups, render_html
 
 st.set_page_config(page_title="DineMaster", layout="wide")
 
@@ -111,15 +112,14 @@ def update_data_panel(cfg, df: pd.DataFrame) -> None:
     """Data-freshness line plus a generator for per-account statement links on the dining site."""
     latest = latest_by_account(df)
     today = date.today()
-    if latest:
-        newest = max(latest.values())
-        age = (today - newest).days
-        label = f"Update data — latest transaction {newest:%b %d} ({'today' if age == 0 else f'{age} days ago'})"
+    through = data_through(cfg, df)
+    if through:
+        label = f"Update data — exports cover through {through:%b} {through.day} ({ago((today - through).days)})"
     else:
         label = "Update data — no transactions loaded yet"
     with st.expander(label, expanded=False):
         if latest:
-            st.caption(" · ".join(f"{name}: through {d:%b %d}" for name, d in sorted(latest.items())))
+            st.caption("Last transaction — " + " · ".join(f"{name}: {d:%b} {d.day}" for name, d in sorted(latest.items())))
         if not cfg.export.accounts:
             st.caption(f"Drop new CSV exports into `{cfg.raw_dir}` and reload.")
             return
@@ -149,7 +149,7 @@ def tiles_page(cfg: Config, df: pd.DataFrame) -> None:
     if df.empty:
         st.info(f"No dining data found yet. Drop your statement CSV exports into `{cfg.raw_dir}` and reload.")
         return
-    groups = build_groups(metrics, cfg, df, m.daily(df, cfg), date.today())
+    groups = build_groups(metrics, cfg, df, m.daily(df, cfg), date.today(), data_through(cfg, df))
     st.html(render_html(groups, "Dining", f"as of {dc.a:%A, %b} {dc.a.day}"))
 
 
