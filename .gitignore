@@ -5,3 +5,4 @@ __pycache__/
 # personal transaction data never leaves this machine
 raw-data/
 data/
+calendar/

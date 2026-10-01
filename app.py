@@ -22,7 +22,7 @@ from dinemaster.config import ROOT, Config, load_config
 from dinemaster.export_links import build_links, latest_by_account
 from dinemaster.freshness import data_through
 from dinemaster.ingest import load_transactions
-from dinemaster.tiles import ago, build_groups, render_html
+from dinemaster.tiles import ago, build_page_html
 
 st.set_page_config(page_title="DineMaster", layout="wide")
 
@@ -144,13 +144,10 @@ def update_data_panel(cfg, df: pd.DataFrame) -> None:
 
 def tiles_page(cfg: Config, df: pd.DataFrame) -> None:
     """Metro-style summary: the same metrics as the dashboard, as plain-sentence tiles."""
-    metrics = m.compute_metrics(df, cfg)
-    dc = metrics.day_counts
     if df.empty:
         st.info(f"No dining data found yet. Drop your statement CSV exports into `{cfg.raw_dir}` and reload.")
         return
-    groups = build_groups(metrics, cfg, df, m.daily(df, cfg), date.today(), data_through(cfg, df))
-    st.html(render_html(groups, "Dining", f"as of {dc.a:%A, %b} {dc.a.day}"))
+    st.html(build_page_html(cfg, df, date.today()))
 
 
 def main(cfg: Config, df: pd.DataFrame, report) -> None:

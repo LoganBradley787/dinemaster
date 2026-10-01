@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import calendar
 import re
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -51,3 +51,13 @@ def data_through(cfg: Config, df: pd.DataFrame) -> date | None:
     """The last day covered for every pot (the stalest pot decides), or None with no data."""
     covered = coverage_by_pot(cfg, df)
     return min(covered.values()) if covered else None
+
+
+def observed_through(cfg: Config, df: pd.DataFrame) -> date:
+    """Last day whose usage is actually known: the earlier of the (clamped) as-of date and data coverage.
+
+    Days after this are unknown, not zero-usage; forecasts and daily plans start the day after.
+    """
+    a = min(max(cfg.as_of, cfg.semester_start - timedelta(days=1)), cfg.semester_end)
+    through = data_through(cfg, df)
+    return min(a, through) if through else a

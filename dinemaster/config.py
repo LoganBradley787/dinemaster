@@ -17,6 +17,7 @@ class AwayPeriod:
     start: date
     end: date
     enabled: bool = True
+    source: str = "config"  # "config" | "calendar"
 
     def contains(self, d: date) -> bool:
         return self.enabled and self.start <= d <= self.end
@@ -45,6 +46,47 @@ class ExportConfig:
 
 
 @dataclass(frozen=True)
+class Marker:
+    """A dated note shown on charts (reading days, exams); does not affect day counting."""
+
+    name: str
+    start: date
+    end: date
+
+
+@dataclass(frozen=True)
+class ForecastConfig:
+    half_life_days: float = 21.0
+    prior_days: float = 2.0
+    simulations: int = 2000
+    seed: int = 7
+    band: tuple[int, int] = (10, 90)
+
+
+@dataclass(frozen=True)
+class CalendarConfig:
+    ics_dir: Path | None = None
+    ics_urls: tuple[str, ...] = ()
+    away_patterns: tuple[str, ...] = ()
+    marker_patterns: tuple[str, ...] = ()
+    cache_hours: float = 24.0
+    cache_dir: Path | None = None
+
+
+@dataclass(frozen=True)
+class HabitsConfig:
+    late_night_start: int = 21
+    late_night_end: int = 4
+
+
+@dataclass(frozen=True)
+class SemesterDef:
+    name: str
+    start: date
+    end: date
+
+
+@dataclass(frozen=True)
 class Config:
     semester_start: date
     semester_end: date
@@ -69,6 +111,12 @@ class Config:
     pots: tuple[PotRule, ...] = ()
     as_of: date = field(default_factory=date.today)
     export: ExportConfig = ExportConfig()
+    forecast: ForecastConfig = ForecastConfig()
+    max_meals_per_day: int = 3
+    calendar: CalendarConfig = CalendarConfig()
+    markers: tuple[Marker, ...] = ()  # filled in by calendar_sync.apply_calendar
+    habits: HabitsConfig = HabitsConfig()
+    history: tuple[SemesterDef, ...] = ()
 
     def round_meals(self, x: float) -> float:
         """Convert a fractional meal count to whole units of `rounding_granularity` using `rounding_mode`."""
@@ -90,6 +138,8 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
     sem, plan, away, cls, files = c["semester"], c["plan"], c.get("away", {}), c["classification"], c["files"]
     rounding = plan.get("dd_rounding", {})
     exp = c.get("export", {})
+    fc, cal, hab = c.get("forecast", {}), c.get("calendar", {}), c.get("habits", {})
+    ledger_path = root / files.get("ledger_path", "data/ledger.csv")
     return Config(
         semester_start=sem["start"],
         semester_end=sem["end"],
@@ -111,7 +161,7 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
         load_patterns=tuple(cls.get("load_patterns", ["^Deposit$"])),
         adjustment_patterns=tuple(cls.get("adjustment_patterns", [])),
         raw_dir=root / files.get("raw_dir", "raw-data"),
-        ledger_path=root / files.get("ledger_path", "data/ledger.csv"),
+        ledger_path=ledger_path,
         account_regex=files.get("account_regex", r"^(?P<account>.+?)_statement"),
         columns=dict(files["columns"]),
         pots=tuple(PotRule(p["pattern"], p["pot"]) for p in files.get("pots", [])),
@@ -123,4 +173,22 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
             account_param=exp.get("account_param", "acct"),
             accounts=tuple(ExportAccount(a["name"], str(a["acct"])) for a in exp.get("accounts", [])),
         ),
+        forecast=ForecastConfig(
+            half_life_days=float(fc.get("half_life_days", 21.0)),
+            prior_days=float(fc.get("prior_days", 2.0)),
+            simulations=int(fc.get("simulations", 2000)),
+            seed=int(fc.get("seed", 7)),
+            band=tuple(fc.get("band", [10, 90])),
+        ),
+        max_meals_per_day=int(c.get("budget", {}).get("max_meals_per_day", 3)),
+        calendar=CalendarConfig(
+            ics_dir=root / cal["ics_dir"] if cal.get("ics_dir") else None,
+            ics_urls=tuple(cal.get("ics_urls", [])),
+            away_patterns=tuple(cal.get("away_patterns", [])),
+            marker_patterns=tuple(cal.get("marker_patterns", [])),
+            cache_hours=float(cal.get("cache_hours", 24.0)),
+            cache_dir=ledger_path.parent / "calendar-cache",
+        ),
+        habits=HabitsConfig(int(hab.get("late_night_start", 21)), int(hab.get("late_night_end", 4))),
+        history=tuple(SemesterDef(h["name"], h["start"], h["end"]) for h in c.get("history", {}).get("semesters", [])),
     )

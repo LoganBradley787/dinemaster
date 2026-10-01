@@ -235,3 +235,14 @@ def render_html(groups: list[Group], title: str, subtitle: str) -> str:
         out.append("</div></section>")
     out.append("</div></div>")
     return "".join(out)
+
+
+def build_page_html(cfg: Config, df: pd.DataFrame, today: date) -> str:
+    """Everything the Tiles page shows, as one HTML string. app.py calls only this."""
+    from . import metrics as m
+    from .freshness import data_through
+
+    metrics = m.compute_metrics(df, cfg)
+    a = metrics.day_counts.a
+    groups = build_groups(metrics, cfg, df, m.daily(df, cfg), today, data_through(cfg, df))
+    return render_html(groups, "Dining", f"as of {a:%A, %b} {a.day}")
