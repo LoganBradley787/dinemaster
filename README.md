@@ -101,3 +101,7 @@ uv run pytest -q
 ```
 
 Code lives in `dinemaster/`: `ingest.py` merges exports into a ledger, `metrics.py` holds the core pace math, `forecast.py` and `budget.py` the weekday-aware projections and daily plan, and `tiles.py` the tiles page. Design notes are in `docs/superpowers/specs/`.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
