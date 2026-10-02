@@ -6,3 +6,8 @@ __pycache__/
 raw-data/
 data/
 calendar/
+# generated demo data (demo/make_demo.py is tracked)
+demo/raw-data/
+demo/data/
+demo/calendar/
+demo/config.toml

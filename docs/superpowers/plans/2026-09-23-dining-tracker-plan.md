@@ -15,7 +15,7 @@ Pure functions over the ingest DataFrame (columns in spec §Ingest public API) +
 - `ideal_series(cfg, start_amount, apply_away)` (S..E), `projection_series(cfg, left, rate, apply_away)` (A..min(run-out, E)).
 - `run_out_two_per_day(...)`, `burn_projection(...)`, `day_mix(M, R)`, `what_if(cfg, me_left, dd_left, meals_per_day, apply_away)`.
 - `compute_metrics(df, cfg)` → one nested dict/dataclass holding metrics 1–7 with `plain` and `away` variants, documented in a docstring so the UI author can consume it without reading internals.
-Test with a hand-built DataFrame. Include the spec's smoke-test scenario rebuilt synthetically (as_of 2026-09-23; 43 ME net used; $54.83 DD used) and check the approximate values listed there; plus edge cases (zero usage, as_of before S / after E, Dr=0, M>2R, M<R).
+Test with a hand-built DataFrame. Include a synthetic end-to-end smoke scenario with hand-calculated expected values; plus edge cases (zero usage, as_of before S / after E, Dr=0, M>2R, M<R).
 
 ## Task C — charts + app (`dinemaster/charts.py`, `app.py`) — after A and B
 Spec §Charts, §Parameters (sidebar overrides via `dataclasses.replace`), §Edge cases, data-health panel, what-if slider, day-convention note in UI. Ingest runs on every rerun (data is tiny; page reload = fresh data). Verify by running the app headless and checking there are no exceptions.

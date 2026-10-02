@@ -69,7 +69,7 @@ Start and end inclusive. `S`,`E` = semester start/end. `A` = as-of clamped to `[
 6. Burn rate per pot: `rate = used / De` (away variant `/ De'`). If used == 0 or De ≤ 0 → "not enough data". Projected run-out: walk usable days from A+1 subtracting rate until balance ≤ 0 (fractional; report date the balance crosses 0, or "lasts past end"). Spare days = run-out − E. Leftover at E = `left − rate × Dr` (away: `Dr'`), floored at 0 for display, also show shortfall. If DD leftover ≥ `dd_leftover_flag` and rollover off → warning "≈$X unspent will be lost"; rollover on → "≈$X carries to spring".
 7. DD breakdown: meal vs snack $ and counts, by location (description).
 
-Smoke test (9/23, loose): me_left 117 (CSV) vs user's 116; dd_left ≈ 305.17; me rate ≈ 1.26/day; DD leftover ≈ $166; allowed pace ≈ 1.36 / 1.59; 2/day run-out ≈ Nov 20 (ME), Nov 30 (with DD), Dec 5 (with DD, away).
+Smoke test: a synthetic scenario in `tests/test_metrics.py` checks each formula end to end against hand-calculated values.
 
 ## Charts (Plotly; daily granularity; x from S to E)
 1. ME balance: actual = `starting_me − cumulative net usage` by end of each day from S (starts full at S; no deposit spike) through A; ideal = straight line from starting_me before S to 0 at end of E (flat across away days when away applied); dashed projection from A at burn rate. Markers: today (A), semester end, shaded away periods.
