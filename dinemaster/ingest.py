@@ -1,7 +1,6 @@
 """Parse raw-data exports, merge into the ledger, classify, and validate balance chains.
 
-Public API: ``load_transactions(cfg) -> (DataFrame, IngestReport)``. See
-docs/superpowers/specs/2026-09-23-dining-tracker-design.md, section "Ingest".
+Public API: ``load_transactions(cfg) -> (DataFrame, IngestReport)``.
 """
 
 from __future__ import annotations

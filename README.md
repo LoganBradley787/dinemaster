@@ -2,6 +2,8 @@
 
 A dashboard that runs on your own computer and answers one question: **will my dining plan last the semester?**
 
+This is overkill, and that's on purpose. You can answer that question with the balance on the dining website and thirty seconds of division. DineMaster answers it with nine tabs, a 2,000-run simulation, a heatmap of what hour you eat on Thursdays, and a running total of what you've spent on snacks after 9 PM. Nobody needs this much information about their meal plan. But wouldn't you like to see it?
+
 You download your transaction history from the dining account website, drop the files in a folder, and DineMaster shows how many meal exchanges and dining dollars you have left, whether you're ahead of or behind pace, how many meals you can eat today, and when you'd run out at your current habits.
 
 It was built for a UVA meal plan (meal exchanges + dining dollars), but the plan size, dates, and file format are all settings, so it can be adapted to other plans.
@@ -59,7 +61,7 @@ A browser tab opens at `http://localhost:8501` with a fictional student's semest
 
 ## Use your own data
 
-**1. Describe your plan.** Open `config.toml` in any text editor and set:
+**1. Describe your plan.** `config.toml` comes filled in with my plan as a working example. Open it in any text editor and change these to yours:
 
 - `start` and `end` — your first and last day on campus this semester
 - `starting_me` and `starting_dd` — how many meal exchanges and dining dollars the plan starts with
@@ -100,7 +102,7 @@ If your school's export looks different, the `[files]` section maps column names
 uv run pytest -q
 ```
 
-Code lives in `dinemaster/`: `ingest.py` merges exports into a ledger, `metrics.py` holds the core pace math, `forecast.py` and `budget.py` the weekday-aware projections and daily plan, and `tiles.py` the tiles page. Design notes are in `docs/superpowers/specs/`.
+Code lives in `dinemaster/`: `ingest.py` merges exports into a ledger, `metrics.py` holds the core pace math, `forecast.py` and `budget.py` the weekday-aware projections and daily plan, and `tiles.py` the tiles page.
 
 ## License
 

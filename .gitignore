@@ -11,3 +11,5 @@ demo/raw-data/
 demo/data/
 demo/calendar/
 demo/config.toml
+# planning notes stay local
+docs/superpowers/
