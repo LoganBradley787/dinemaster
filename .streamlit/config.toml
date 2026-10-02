@@ -13,3 +13,6 @@ runOnSave = false
 
 [browser]
 gatherUsageStats = false
+
+[client]
+toolbarMode = "minimal"   # hide Streamlit's Deploy button and developer menu
