@@ -2,38 +2,43 @@
 
 A (very unnecessary) dashboard that runs on your own computer and answers one question: **will my dining plan last the semester?**
 
-You download your transaction history from the dining account website, drop the files in a folder, and DineMaster shows how many meal exchanges and dining dollars you have left, whether you're ahead of or behind pace, how many meals you can eat today, and when you'd run out at your current habits.
+Download your transaction history from the dining account website. Put the files in a folder. DineMaster then shows:
 
-It was built for a UVA meal plan (meal exchanges + dining dollars), but the plan size, dates, and file format are all settings, so it can be adapted to other plans.
+- the meal exchanges and dining dollars that remain
+- if you are ahead of or behind an even pace
+- the number of meals you can eat today
+- the date when each balance will be empty
+
+I made it for a UVA meal plan (meal exchanges and dining dollars). You can change the plan size, the dates, and the file format in the settings.
 
 ![Tiles page](docs/screenshots/tiles.png)
 
-*Screenshots use made-up demo data.*
+*The screenshots show demo data that is not real.*
 
 ## What you get
 
-**Tiles** — a Windows 8-style summary in plain sentences. Some tiles flip to show a second fact.
+**Tiles**: a summary in the style of Windows 8. Each tile gives one fact. Some tiles turn over and show a second fact.
 
-**Dashboard** — charts and details, organized in tabs:
+**Dashboard**: charts and details in nine tabs.
 
-| Tab | What it shows |
+| Tab | Contents |
 |---|---|
-| Balances | What you have left over time, against an even pace to zero |
-| Forecast | Your typical week, day by day, and a projection with a likely range |
-| Daily plan | How many meals to eat today and over the next two weeks |
-| Usage | Meals per day and how your weeks break down |
-| Habits | When and where you eat, streaks, late-night spending, weekly recap |
-| Compare | This semester against earlier ones |
-| Plan math | Every formula's result, with and without time away |
-| What-if | Pick a meals-per-day rate and see where you end up |
-| Data | What was imported and whether anything looks off |
+| Balances | Your balances through time, compared with an even pace |
+| Forecast | Your usual week, and a projection with a probable range |
+| Daily plan | The number of meals to eat each day for the next two weeks |
+| Usage | The meals for each day and each week |
+| Habits | The times and places you eat, streaks, late-night purchases, and a weekly summary |
+| Compare | This semester compared with earlier semesters |
+| Plan math | The result of each formula, with and without your days away |
+| What-if | The result of a meals-per-day rate that you select |
+| Data | The files that the app imported, and possible problems |
 
 ![Dashboard](docs/screenshots/dashboard.png)
 
 <details>
 <summary>More screenshots</summary>
 
-**Forecast: your week, day by day**
+**Forecast**
 ![Forecast](docs/screenshots/forecast.png)
 
 **Daily plan**
@@ -44,9 +49,9 @@ It was built for a UVA meal plan (meal exchanges + dining dollars), but the plan
 
 </details>
 
-## Try it in two minutes (demo data)
+## Try the demo
 
-You need [uv](https://docs.astral.sh/uv/getting-started/installation/), a tool that installs Python and everything else for you. Then, in a terminal:
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/). This tool installs Python and all other necessary software. Then do these commands in a terminal:
 
 ```bash
 git clone https://github.com/LoganBradley787/dinemaster.git
@@ -55,44 +60,44 @@ uv run python demo/make_demo.py
 DINEMASTER_CONFIG=demo/config.toml uv run streamlit run app.py
 ```
 
-A browser tab opens at `http://localhost:8501` with a fictional student's semester. Press `Ctrl+C` in the terminal to stop it.
+A browser tab opens at `http://localhost:8501`. It shows a semester of demo data. To stop the app, press `Ctrl+C` in the terminal.
 
 ## Use your own data
 
-**1. Describe your plan.** `config.toml` comes filled in with my plan as a working example. Open it in any text editor and change these to yours:
+1. **Set your plan.** Open `config.toml` in a text editor. The file contains my plan as an example. Change these values:
+   - `start` and `end`: your first day and last day on campus this semester
+   - `starting_me` and `starting_dd`: the meal exchanges and dining dollars at the start of the plan
+   - `meal_price`: the approximate price of a meal when you pay with dining dollars
+   - `[[away.periods]]`: the days when you are away. Delete this entry if it does not apply.
+2. **Download your transactions.** Go to the dining account website. Open the statement for each account. Export each statement as a CSV file. You can use any date range.
+3. **Put the files in the project.** Make a folder with the name `raw-data` in the project folder. Put the CSV files in it. Do not change the file names. DineMaster uses the names to identify the accounts.
+4. **Start the app.**
 
-- `start` and `end` — your first and last day on campus this semester
-- `starting_me` and `starting_dd` — how many meal exchanges and dining dollars the plan starts with
-- `meal_price` — roughly what a meal costs when you pay with dining dollars
-- the `[[away.periods]]` entry — days you'll be away and not eating on the plan (or delete it)
+   ```bash
+   uv run streamlit run app.py
+   ```
 
-**2. Download your transactions.** On the dining account website, open each account's statement (meal exchanges, dining dollars, and any promotional dining dollars) and export it as CSV. Any date range works.
+### Update your data
 
-**3. Put the files in a folder named `raw-data`** inside the project. Leave the file names as they are — DineMaster uses them to tell the accounts apart.
+Download new exports at any time. Put them in `raw-data` with the old files. Then reload the page.
 
-**4. Start the app.**
+DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of the dashboard shows the last date that your data includes. The Data tab shows the number of new transactions from each file.
 
-```bash
-uv run streamlit run app.py
-```
+### Optional: add your calendar
 
-### Updating later
+Make a folder with the name `calendar`. Put `.ics` calendar files in it. Most calendar apps can export this file type.
 
-Download fresh exports whenever you like, drop them in `raw-data` alongside the old ones, and reload the page. Overlap is fine: a transaction that appears in several files is only counted once, and nothing already imported is ever lost. The panel at the top of the dashboard shows how current your data is, and the Data tab shows how many new transactions each file added.
-
-### Optional: your calendar
-
-Create a `calendar` folder and drop in `.ics` calendar files (most calendar apps and university academic calendars can export one). Events with names like "break", "recess", "home", or "trip" are treated as days away; reading days and exams are marked on the charts. Each can be switched off in the sidebar.
+DineMaster uses events with names such as "break", "recess", "home", or "trip" as days away. It shows reading days and exams as marks on the charts. You can set each event to off in the sidebar.
 
 ## Your data stays on your computer
 
-DineMaster runs locally and sends nothing anywhere. The folders that hold your personal information — `raw-data/`, `data/`, and `calendar/` — are excluded from git, so they can't be committed or pushed by accident.
+DineMaster runs on your computer and sends no data to other computers. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
 
 ## Settings
 
-Everything adjustable lives in `config.toml`, with a comment on each line. The sidebar lets you try different values (including an "as of" date to look at any past day) without changing the file.
+All settings are in `config.toml`. Each line has a comment. In the sidebar, you can try different values, and the file does not change. You can also set an "as of" date to see a past day.
 
-If your school's export looks different, the `[files]` section maps column names and file names, and `[classification]` controls what counts as a snack versus a meal.
+If your school uses a different export format, change the `[files]` section. It sets the column names and the file names. The `[classification]` section sets the difference between a snack and a meal.
 
 ## For developers
 
@@ -100,8 +105,13 @@ If your school's export looks different, the `[files]` section maps column names
 uv run pytest -q
 ```
 
-Code lives in `dinemaster/`: `ingest.py` merges exports into a ledger, `metrics.py` holds the core pace math, `forecast.py` and `budget.py` the weekday-aware projections and daily plan, and `tiles.py` the tiles page.
+The code is in `dinemaster/`:
+
+- `ingest.py` merges the exports into one ledger.
+- `metrics.py` calculates the pace.
+- `forecast.py` and `budget.py` calculate the projections and the daily plan.
+- `tiles.py` makes the Tiles page.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).
