@@ -1,8 +1,6 @@
 # DineMaster
 
-A dashboard that runs on your own computer and answers one question: **will my dining plan last the semester?**
-
-This is overkill, and that's on purpose. You can answer that question with the balance on the dining website and thirty seconds of division. DineMaster answers it with nine tabs, a 2,000-run simulation, a heatmap of what hour you eat on Thursdays, and a running total of what you've spent on snacks after 9 PM. Nobody needs this much information about their meal plan. But wouldn't you like to see it?
+A (very unnecessary) dashboard that runs on your own computer and answers one question: **will my dining plan last the semester?**
 
 You download your transaction history from the dining account website, drop the files in a folder, and DineMaster shows how many meal exchanges and dining dollars you have left, whether you're ahead of or behind pace, how many meals you can eat today, and when you'd run out at your current habits.
 
