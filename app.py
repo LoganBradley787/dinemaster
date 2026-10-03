@@ -6,14 +6,16 @@ to an alternate config.toml (used by tests); raw_dir/ledger_path in that file
 are resolved relative to its own parent directory.
 
 Calendar files (`[calendar]` in config.toml) are merged into the config before
-the sidebar is built, so away periods found there get sidebar toggles like the
-configured ones and markers show on the balance and forecast charts.
+the session's settings are applied, so away periods found there get switches on
+the Configuration page like the configured ones, and markers show on the charts.
 """
 
 from __future__ import annotations
 
 import dataclasses
 import os
+import subprocess
+import sys
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -83,85 +85,147 @@ def side_by_side(rows: dict[str, tuple[str, str]]) -> pd.DataFrame:
     return pd.DataFrame(rows, index=["Plain", "Away"]).T
 
 
-def sidebar_config(base_cfg: Config) -> Config:
-    st.sidebar.header("Session parameters")
-    st.sidebar.caption("Overrides here last only for this session. For permanent changes, edit config.toml.")
+# Settings widgets live on the Configuration page; their values are kept in session state under
+# these prefixes so the other pages see them too.
+_SETTING_PREFIXES = ("set_", "away_")
+_SETTING_FIELDS = (
+    "semester_start", "semester_end", "data_cutoff", "as_of", "starting_me", "starting_dd", "meal_price",
+    "rounding_mode", "rounding_granularity", "meal_threshold", "dd_rollover", "dd_leftover_flag", "exclude_away",
+)  # fmt: skip
 
-    with st.sidebar.expander("Semester & as-of", expanded=True):
-        semester_start = st.date_input("Semester start", base_cfg.semester_start)
-        semester_end = st.date_input("Semester end", base_cfg.semester_end)
-        data_cutoff = st.date_input("Data cutoff", base_cfg.data_cutoff)
-        as_of = st.date_input("As of", base_cfg.as_of)
 
-    with st.sidebar.expander("Starting balances & price"):
-        starting_me = st.number_input("Starting ME", value=float(base_cfg.starting_me), step=1.0)
-        starting_dd = st.number_input("Starting DD ($)", value=float(base_cfg.starting_dd), step=1.0)
-        meal_price = st.number_input("Meal price ($)", value=float(base_cfg.meal_price), step=0.5, min_value=0.01)
+def _away_key(i: int, period) -> str:
+    # Calendar periods come and go as .ics files change, so they are keyed by their dates rather
+    # than by position (a position key would hand one period another's edits).
+    return f"cal_{period.start}_{period.end}" if period.source == "calendar" else str(i)
 
-    with st.sidebar.expander("DD rounding"):
-        modes = ["floor", "round", "ceil"]
-        rounding_mode = st.selectbox("Rounding mode", modes, index=modes.index(base_cfg.rounding_mode))
-        rounding_granularity = st.number_input(
-            "Granularity (meals)", value=float(base_cfg.rounding_granularity), step=0.5, min_value=0.01
-        )
 
-    with st.sidebar.expander("Usage rules"):
-        meal_threshold = st.number_input("Meal threshold ($)", value=float(base_cfg.meal_threshold), step=1.0)
-        dd_rollover = st.checkbox("DD rolls over to spring", value=base_cfg.dd_rollover)
-        dd_leftover_flag = st.number_input(
-            "DD leftover warning threshold ($)", value=float(base_cfg.dd_leftover_flag), step=1.0
-        )
-        exclude_away = st.checkbox("Exclude away days from remaining/pace", value=base_cfg.exclude_away)
+def keep_settings() -> None:
+    """Streamlit forgets a widget's value when its page isn't showing; writing it back keeps it."""
+    for key in list(st.session_state):
+        if key.startswith(_SETTING_PREFIXES):
+            st.session_state[key] = st.session_state[key]
 
+
+def session_config(base_cfg: Config) -> Config:
+    """`base_cfg` with whatever was changed on the Configuration page this session."""
+    state = st.session_state
     away_periods = []
-    with st.sidebar.expander("Away periods"):
+    for i, period in enumerate(base_cfg.away_periods):
+        key = _away_key(i, period)
+        away_periods.append(
+            dataclasses.replace(
+                period,
+                enabled=state.get(f"away_enabled_{key}", period.enabled),
+                start=state.get(f"away_start_{key}", period.start),
+                end=state.get(f"away_end_{key}", period.end),
+            )
+        )
+    changed = {f: state[f"set_{f}"] for f in _SETTING_FIELDS if f"set_{f}" in state}
+    return dataclasses.replace(base_cfg, **changed, away_periods=tuple(away_periods))
+
+
+def settings_section(base_cfg: Config) -> None:
+    """The plan settings, as widgets. Changes last for this session; config.toml is never written."""
+    state = st.session_state
+    for f in _SETTING_FIELDS:
+        value = getattr(base_cfg, f)
+        state.setdefault(f"set_{f}", float(value) if isinstance(value, (int, float)) and not isinstance(value, bool) else value)
+
+    dates, plan = st.columns(2)
+    with dates:
+        st.markdown("**Semester**")
+        st.date_input("Semester start", key="set_semester_start")
+        st.date_input("Semester end", key="set_semester_end")
+        st.date_input("Ignore data before", key="set_data_cutoff")
+        st.date_input(
+            "As of",
+            key="set_as_of",
+            help="Look at the plan as it stood on a past day. Start and end dates count as full days; "
+            "days left are counted from the day after this one.",
+        )
+    with plan:
+        st.markdown("**Plan**")
+        st.number_input("Starting meal exchanges", step=1.0, key="set_starting_me")
+        st.number_input("Starting dining dollars ($)", step=1.0, key="set_starting_dd")
+        st.number_input("Meal price ($)", step=0.5, min_value=0.01, key="set_meal_price")
+        st.checkbox("Leave out days away when counting days left", key="set_exclude_away")
+
+    with st.expander("Days away"):
         if not base_cfg.away_periods:
             st.caption("None configured.")
         for i, period in enumerate(base_cfg.away_periods):
+            key = _away_key(i, period)
+            state.setdefault(f"away_enabled_{key}", period.enabled)
+            state.setdefault(f"away_start_{key}", period.start)
+            state.setdefault(f"away_end_{key}", period.end)
             from_calendar = " · from calendar" if period.source == "calendar" else ""
-            st.markdown(esc(f"**{period.name}**{from_calendar}"))
-            # Calendar periods come and go as .ics files change, so their widgets are keyed by their
-            # dates rather than by position (a position key would hand one period another's edits).
-            key = f"cal_{period.start}_{period.end}" if period.source == "calendar" else str(i)
-            enabled = st.checkbox("Enabled", value=period.enabled, key=f"away_enabled_{key}")
-            start = st.date_input("Start", period.start, key=f"away_start_{key}")
-            end = st.date_input("End", period.end, key=f"away_end_{key}")
-            away_periods.append(dataclasses.replace(period, enabled=enabled, start=start, end=end))
+            on, start, end = st.columns([2, 1, 1], vertical_alignment="bottom")
+            on.checkbox(esc(f"**{period.name}**{from_calendar}"), key=f"away_enabled_{key}")
+            start.date_input("Start", key=f"away_start_{key}")
+            end.date_input("End", key=f"away_end_{key}")
 
-    return dataclasses.replace(
-        base_cfg,
-        semester_start=semester_start,
-        semester_end=semester_end,
-        data_cutoff=data_cutoff,
-        as_of=as_of,
-        starting_me=starting_me,
-        starting_dd=starting_dd,
-        meal_price=meal_price,
-        rounding_mode=rounding_mode,
-        rounding_granularity=rounding_granularity,
-        meal_threshold=meal_threshold,
-        dd_rollover=dd_rollover,
-        dd_leftover_flag=dd_leftover_flag,
-        exclude_away=exclude_away,
-        away_periods=tuple(away_periods),
-    )
+    with st.expander("Fine print"):
+        st.number_input("A dining-dollar purchase counts as a meal from ($)", step=1.0, key="set_meal_threshold")
+        st.selectbox("Rounding dining dollars into meals", ["floor", "round", "ceil"], key="set_rounding_mode")
+        st.number_input("Round to the nearest (meals)", step=0.5, min_value=0.01, key="set_rounding_granularity")
+        st.checkbox("Dining dollars roll over to spring", key="set_dd_rollover")
+        st.number_input("Warn when leftover dining dollars pass ($)", step=1.0, key="set_dd_leftover_flag")
 
 
-def update_data_panel(cfg, df: pd.DataFrame) -> None:
-    """Data-freshness line plus a generator for per-account statement links on the dining site."""
+def fetch_data(cfg: Config) -> None:
+    """A browser window opens for the login, then every account's CSV lands in raw_dir."""
+    with st.spinner("A browser window is open. Log in there if it asks, then wait."):
+        try:
+            done = subprocess.run(
+                [sys.executable, "-m", "dinemaster.fetch"],
+                cwd=ROOT,
+                env={**os.environ, "DINEMASTER_CONFIG": str(_CONFIG_PATH)},
+                capture_output=True,
+                text=True,
+                timeout=420,
+            )
+        except subprocess.TimeoutExpired:
+            st.error("Fetch failed: it took too long.")
+            return
+    if done.returncode:
+        st.error(done.stderr.strip().splitlines()[-1] if done.stderr.strip() else "Fetch failed.")
+        return
+    st.session_state["fetched"] = done.stdout.strip().splitlines()
+    st.rerun()
+
+
+def data_section(cfg: Config, df: pd.DataFrame) -> None:
+    """How current the data is, and the ways to bring it up to date."""
     latest = latest_by_account(df)
     today = date.today()
     through = data_through(cfg, df)
     if through:
-        label = f"Update data — exports cover through {through:%b} {through.day} ({ago((today - through).days)})"
+        st.markdown(f"Your data runs through **{short(through)}** ({ago((today - through).days)}).")
     else:
-        label = "Update data — no transactions loaded yet"
-    with st.expander(label, expanded=False):
-        if latest:
-            st.caption("Last transaction — " + " · ".join(f"{name}: {d:%b} {d.day}" for name, d in sorted(latest.items())))
-        if not cfg.export.accounts:
-            st.caption(f"Drop new CSV exports into `{cfg.raw_dir}` and reload.")
-            return
+        st.markdown("No transactions loaded yet.")
+
+    can_fetch = bool(cfg.export.login_url and cfg.export.accounts)
+    fetch_col, reload_col, _ = st.columns([1, 1, 2])
+    if can_fetch and fetch_col.button(
+        "Get new data", type="primary", width="stretch", help="Opens a browser window on the dining site. Log in if it asks."
+    ):
+        fetch_data(cfg)
+    reload_col.button(
+        "Re-read files",
+        width="stretch",
+        help=f"Read the files in {cfg.raw_dir.name}/ and your calendars again. Nothing is downloaded.",
+        on_click=_calendar_merge.clear,
+    )
+    for line in st.session_state.pop("fetched", []):
+        st.caption(f"Downloaded {line}")
+    if latest:
+        st.caption("Last transaction: " + " · ".join(f"{name} {short(d)}" for name, d in sorted(latest.items())))
+
+    if not cfg.export.accounts:
+        st.caption(f"To add data, put new CSV exports into `{cfg.raw_dir}`.")
+        return
+    with st.expander("Download by hand"):
         pasted = st.text_input(
             "Log in to the dining site, copy the URL of any page, and paste it here",
             help="Only used to build the links below (it carries your login session); it is not saved anywhere.",
@@ -176,9 +240,18 @@ def update_data_panel(cfg, df: pd.DataFrame) -> None:
                     col.link_button(link.name, link.url, help=f"{link.start:%b %d} → {link.end:%b %d}")
                 st.caption(
                     f"Each link opens that account's statement from its last known transaction through today. "
-                    f"Export each as CSV, drop the files into `{cfg.raw_dir}`, then reload this page. "
-                    "If a link says you're logged out, the session expired — paste a fresh URL."
+                    f"Export each as CSV and put the files into `{cfg.raw_dir}`. "
+                    "If a link says you're logged out, the session expired; paste a fresh URL."
                 )
+
+
+def configuration_page(base_cfg: Config, cfg: Config, df: pd.DataFrame) -> None:
+    st.title("Configuration")
+    st.subheader("Data")
+    data_section(cfg, df)
+    st.subheader("Settings")
+    st.caption("Changes here last until you close the app. To keep them, edit `config.toml`.")
+    settings_section(base_cfg)
 
 
 def tiles_page(cfg: Config, df: pd.DataFrame) -> None:
@@ -516,7 +589,7 @@ def calendar_section(cfg: Config, cal: CalendarResult) -> None:
             "name": p.name,
             "start": p.start,
             "end": p.end,
-            "status": "added (toggle it in the sidebar)" if (p.start, p.end) in merged else "already covered by a configured period",
+            "status": "added (switch it off under Configuration)" if (p.start, p.end) in merged else "already covered by a configured period",
         }
         for p in cal.away
     ] + [{"what": "chart marker", "name": mk.name, "start": mk.start, "end": mk.end, "status": "shown on balance charts"} for mk in cal.markers]
@@ -533,22 +606,15 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
     variant = "away" if cfg.exclude_away else "plain"
 
     st.title("DineMaster")
-    st.caption(f"As of {dc.a.isoformat()}")
-    st.caption(
-        "Day convention: start and end dates are inclusive. Elapsed days run "
-        "S → as-of; remaining days run the day after as-of → semester end. "
-        "When the away toggle is on, enabled away-period days are subtracted "
-        "from remaining (and elapsed) day counts."
-    )
-
-    update_data_panel(cfg, df)
+    through = data_through(cfg, df)
+    st.caption(f"As of {short(dc.a)}" + (f" · data through {short(through)}" if through else ""))
 
     # --- Alerts -----------------------------------------------------------
     raw_has_csvs = any(cfg.raw_dir.glob("*.csv")) if cfg.raw_dir.exists() else False
     if not raw_has_csvs:
         st.info(
             f"No dining data found yet. Drop your UVA statement CSV exports into `{cfg.raw_dir}` "
-            "(one file per account) and use **Reload data** in the sidebar."
+            "(one file per account) and reload this page."
         )
     if dc.notice:
         st.warning(dc.notice)
@@ -558,8 +624,12 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
         st.warning(esc(f"DD reconciliation: {bal.dd_warning}"))
     for w in report.warnings:
         st.warning(esc(f"Ingest: {w}"))
-    if report.chain_breaks:
-        st.warning(f"{len(report.chain_breaks)} balance chain break(s) detected — see the Data tab.")
+    jumps = [b for b in report.chain_breaks if b["timestamp"].date() >= cfg.data_cutoff]
+    if jumps:
+        st.warning(
+            f"The dining site's balance changed {len(jumps)} time(s) this semester with no transaction to explain it. "
+            'See "Balance jumps" on the Data tab.'
+        )
     dd_leftover_note = metrics.burn[variant]["dd"].leftover_note
     if dd_leftover_note:
         st.info(esc(f"DD leftover: {dd_leftover_note}"))
@@ -796,11 +866,26 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
 
         calendar_section(cfg, cal)
 
-        st.markdown("#### Chain breaks")
+        st.markdown("#### Balance jumps")
+        st.caption(
+            "Times when an account's balance on the dining site moved by more or less than the transaction "
+            "listed, as if the site changed the balance without listing why. Usually a correction by the dining office."
+        )
         if report.chain_breaks:
-            st.dataframe(pd.DataFrame(report.chain_breaks), width="stretch", hide_index=True)
+            jumps_df = pd.DataFrame(
+                {
+                    "When": f"{b['timestamp']:%b %d, %Y}",
+                    "Account": b["account"],
+                    "At this transaction": b["description"],
+                    "Balance should be": f"{b['expected']:,.2f}",
+                    "Site says": f"{b['actual']:,.2f}",
+                    "Unexplained": f"{b['actual'] - b['expected']:+,.2f}",
+                }
+                for b in report.chain_breaks
+            )
+            st.dataframe(jumps_df, width="stretch", hide_index=True)
         else:
-            st.caption("None detected.")
+            st.caption("None found.")
 
         st.markdown("#### Reconciliation")
         st.dataframe(
@@ -848,15 +933,11 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
 
 
 def run() -> None:
-    # Sidebar and ingest live in the entrypoint so both pages share the same settings and data.
-    # The calendar is merged in first so its away periods get their own toggles in the sidebar.
+    # Settings and ingest live in the entrypoint so every page shares the same settings and data.
+    # The calendar is merged in first so its away periods get their own switches under Configuration.
+    keep_settings()
     base_cfg, cal = with_calendar(load_config(_CONFIG_PATH, root=_CONFIG_ROOT))
-    cfg = sidebar_config(base_cfg)
-    st.sidebar.button(
-        "Reload data",
-        help="Re-scan raw-data/ and re-read the calendars (a rerun already re-ingests automatically).",
-        on_click=_calendar_merge.clear,
-    )
+    cfg = session_config(base_cfg)
     df, report = load_transactions(cfg)
 
     def dashboard() -> None:
@@ -865,9 +946,13 @@ def run() -> None:
     def tiles() -> None:
         tiles_page(cfg, df)
 
+    def configuration() -> None:
+        configuration_page(base_cfg, cfg, df)
+
     pages = [
         st.Page(dashboard, title="Dashboard", icon=":material/monitoring:", default=True),
         st.Page(tiles, title="Tiles", icon=":material/grid_view:", url_path="tiles"),
+        st.Page(configuration, title="Configuration", icon=":material/settings:", url_path="configuration"),
     ]
     st.navigation(pages).run()
 

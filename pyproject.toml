@@ -9,6 +9,7 @@ dependencies = [
     "pandas>=2.2",
     "plotly>=5.24",
     "icalendar>=7.3.0",
+    "playwright>=1.63.0",
 ]
 
 [dependency-groups]

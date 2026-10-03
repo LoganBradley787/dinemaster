@@ -48,3 +48,19 @@ def test_url_from_another_page_of_the_site_still_works(cfg):
 def test_missing_session_params_raise(cfg, bad):
     with pytest.raises(ValueError):
         build_links(bad, cfg, {}, today=date(2026, 10, 1))
+
+
+def test_fetch_helpers(cfg):
+    from dinemaster.fetch import csv_filename, csv_url, logged_in
+
+    cfg = replace(cfg, export=replace(cfg.export, login_url="https://dining.example.edu/login.php?cid=9"))
+    link = build_links(PASTED, cfg, {}, today=date(2026, 10, 1))[0]
+    assert csv_url(link, cfg).endswith("&acct=22&format=csv")
+    assert csv_filename('attachment; filename="Meals_statement_2026-08-01_to_2026-10-01.csv"', link) == (
+        "Meals_statement_2026-08-01_to_2026-10-01.csv"
+    )
+    assert csv_filename(None, link) == "Meals_statement_2026-08-01_to_2026-10-01.csv"
+    assert logged_in("https://dining.example.edu/textpage.php?pageid=1&skey=abc&cid=9", cfg)
+    assert not logged_in("https://dining.example.edu/login.php?skey=abc&cid=9", cfg)
+    assert not logged_in("https://idp.example.edu/sso?skey=abc&cid=9", cfg)
+    assert not logged_in("https://dining.example.edu/index.php?cid=9&skey=", cfg)

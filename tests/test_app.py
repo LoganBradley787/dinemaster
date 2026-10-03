@@ -101,7 +101,7 @@ end = 2026-05-09
 
 TABS = ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan math", "What-if", "Data"]
 
-# The fixed "today" the richer tests pin the sidebar's as-of date to, and the day their exports end.
+# The fixed "today" the richer tests pin the as-of date to, and the day their exports end.
 AS_OF = date(2026, 9, 14)
 COVERED_THROUGH = date(2026, 9, 13)
 
@@ -158,10 +158,10 @@ def write_semester(tmp_path: Path) -> None:
 
 
 def run_app_as_of(monkeypatch: pytest.MonkeyPatch, config_path: Path, as_of: date = AS_OF) -> AppTest:
-    """Run the app, then pin the sidebar's as-of date so the result doesn't depend on the real clock."""
+    """Run the app, then pin the session's as-of date so the result doesn't depend on the real clock."""
     at = run_app(monkeypatch, config_path)
     assert not at.exception
-    next(d for d in at.sidebar.date_input if d.label == "As of").set_value(as_of)
+    at.session_state["set_as_of"] = as_of
     at.run()
     return at
 
@@ -357,10 +357,7 @@ def test_calendar_file_adds_a_toggleable_away_period_and_markers(tmp_path, monke
     at = run_app_as_of(monkeypatch, config_path)
 
     assert not at.exception
-    sidebar_text = [md.value for md in at.sidebar.markdown]
-    assert "**Fall Break** · from calendar" in sidebar_text
-    assert "**Thanksgiving recess**" in sidebar_text
-    assert len([box for box in at.sidebar.checkbox if box.label == "Enabled"]) == 2
+    assert not list(at.sidebar.checkbox)  # settings live on the Configuration page, not the sidebar
     text = text_of(at)
     assert "Read: `school.ics`" in text
     assert "Calendar: broken.ics: couldn't be read as a calendar file; it was skipped." in text
@@ -369,8 +366,9 @@ def test_calendar_file_adds_a_toggleable_away_period_and_markers(tmp_path, monke
     assert found["status"].str.startswith("added").tolist() == [True, False, False, False]
     with_break = next(t.value for t in at.table if "Mon" in t.value.columns and "Days left" in t.value.index)
 
-    # Switching the calendar's away period off in the sidebar gives its four days back to the plan.
-    at.sidebar.checkbox(key="away_enabled_cal_2026-10-10_2026-10-13").set_value(False).run()
+    # Switching the calendar's away period off under Configuration gives its four days back to the plan.
+    at.session_state["away_enabled_cal_2026-10-10_2026-10-13"] = False
+    at.run()
 
     assert not at.exception
     without_break = next(t.value for t in at.table if "Mon" in t.value.columns and "Days left" in t.value.index)

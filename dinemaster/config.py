@@ -1,4 +1,4 @@
-"""Load config.toml into a Config dataclass. The sidebar builds modified copies via dataclasses.replace."""
+"""Load config.toml into a Config dataclass. The app builds modified copies via dataclasses.replace."""
 
 from __future__ import annotations
 
@@ -42,6 +42,8 @@ class ExportConfig:
     start_param: str = "startdate"
     end_param: str = "enddate"
     account_param: str = "acct"
+    csv_param: str = "format=csv"
+    login_url: str = ""  # set to enable the one-click fetch
     accounts: tuple[ExportAccount, ...] = ()
 
 
@@ -171,6 +173,8 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
             start_param=exp.get("start_param", "startdate"),
             end_param=exp.get("end_param", "enddate"),
             account_param=exp.get("account_param", "acct"),
+            csv_param=exp.get("csv_param", "format=csv"),
+            login_url=exp.get("login_url", ""),
             accounts=tuple(ExportAccount(a["name"], str(a["acct"])) for a in exp.get("accounts", [])),
         ),
         forecast=ForecastConfig(
