@@ -60,6 +60,8 @@ session_params = ["cid", "skey"]   # copied from the pasted URL; never stored
 start_param = "startdate"
 end_param = "enddate"
 account_param = "acct"
+csv_param = "format=csv"           # added to a statement link to get the CSV file
+login_url = "https://connectvirginia.atriumcampus.com/login.php?cid=454"   # enables the Fetch button; delete to turn it off
 
 # name must match the account name in the export file name; acct is the site's account number
 [[export.accounts]]
@@ -73,6 +75,10 @@ acct = "4"
 [[export.accounts]]
 name = "Promotional Dining Dollars"
 acct = "8"
+
+[[export.accounts]]
+name = "Additional Dining Dollars Fall"
+acct = "79"
 
 # Day-of-week forecast: each weekday gets its own expected usage, weighted toward recent weeks.
 [forecast]
@@ -99,6 +105,11 @@ late_night_start = 21   # hour (24h) when "late night" begins
 late_night_end = 4      # hour it ends (next morning)
 
 # Past semesters to compare against (dates are approximate; adjust as needed)
+[[history.semesters]]
+name = "Fall 2025"
+start = 2025-08-21
+end = 2025-12-18
+
 [[history.semesters]]
 name = "Spring 2026"
 start = 2026-01-14

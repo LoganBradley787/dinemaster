@@ -9,7 +9,7 @@ Download your transaction history from the dining account website. Put the files
 - the number of meals you can eat today
 - the date when each balance will be empty
 
-I made it for a UVA meal plan (meal exchanges and dining dollars). You can change the plan size, the dates, and the file format in the settings.
+I made it for my UVA meal plan (meal exchanges and dining dollars), and I tested it only with that plan. You can change the plan size, the dates, and the file format in the settings. Thus it can work for a different school, but I did not try that.
 
 ![Tiles page](docs/screenshots/tiles.png)
 
@@ -81,21 +81,29 @@ A browser tab opens at `http://localhost:8501`. It shows a semester of demo data
 
 Download new exports at any time. Put them in `raw-data` with the old files. Then reload the page.
 
+### UVA only: download with one button
+
+On the Configuration page, the "Get new data" button opens a browser window on the UVA dining site. Log in with NetBadge. DineMaster then downloads the CSV file for each account and puts it in `raw-data`.
+
+This button works only with the UVA dining site. The address and the account numbers are in the `[export]` section of `config.toml`, and they are mine. If your account numbers are different, change them. If you are not at UVA, delete the `login_url` line. The button then goes away, and you download the files yourself.
+
+The button uses Google Chrome. Your password stays in the browser window. DineMaster does not read it or keep it.
+
 DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of the dashboard shows the last date that your data includes. The Data tab shows the number of new transactions from each file.
 
 ### Optional: add your calendar
 
 Make a folder with the name `calendar`. Put `.ics` calendar files in it. Most calendar apps can export this file type.
 
-DineMaster uses events with names such as "break", "recess", "home", or "trip" as days away. It shows reading days and exams as marks on the charts. You can set each event to off in the sidebar.
+DineMaster uses events with names such as "break", "recess", "home", or "trip" as days away. It shows reading days and exams as marks on the charts. You can set each event to off on the Configuration page.
 
 ## Your data stays on your computer
 
-DineMaster runs on your computer and sends no data to other computers. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
+DineMaster runs on your computer and sends no data to other computers. It connects to the dining site only when you click "Get new data". It connects to a calendar feed only if you put the address of the feed in `config.toml`. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
 
 ## Settings
 
-All settings are in `config.toml`. Each line has a comment. In the sidebar, you can try different values, and the file does not change. You can also set an "as of" date to see a past day.
+All settings are in `config.toml`. Each line has a comment. On the Configuration page, you can try different values, and the file does not change. You can also set an "as of" date to see a past day.
 
 If your school uses a different export format, change the `[files]` section. It sets the column names and the file names. The `[classification]` section sets the difference between a snack and a meal.
 
