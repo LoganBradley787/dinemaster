@@ -42,25 +42,25 @@ def lines_chart():
             kit.notes(p, x, NOTES),
             kit.grid_y(p, y),
             kit.axis_x(p, x),
-            kit.area_band(x, y, lo, hi, kit.ME),
+            kit.area_band(x, y, lo, hi, kit.MEALS),
             kit.line(x, y, even, kit.DIM, width=1.5),
-            kit.step_line(x, y, steps, kit.POOLED, width=2),
-            kit.dashed_line(x, y, expected, kit.ME),
-            kit.line(x, y, actual, kit.ME, width=3),
-            kit.points(x, y, steps[14::28], kit.POOLED, hollow=True),
-            kit.end_label(p, x, y, TODAY, now, f"{now:.0f}", kit.ME),
+            kit.step_line(x, y, steps, kit.DOLLARS, width=2),
+            kit.dashed_line(x, y, expected, kit.MEALS),
+            kit.line(x, y, actual, kit.MEALS, width=3),
+            kit.points(x, y, steps[14::28], kit.DOLLARS, hollow=True),
+            kit.end_label(p, x, y, TODAY, now, f"{now:.0f}", kit.MEALS),
             kit.hover_columns(p, x, [(d, f"{d:%a, %b} {d.day}\n{v:.0f} left") for d, v in actual]),
         ]
 
-    keys = [kit.Key("line", kit.ME), kit.Key("dashed_line", kit.ME, "dash"), kit.Key("step_line", kit.POOLED), kit.Key("thin reference line", kit.DIM, "thin"),
-            kit.Key("area_band", kit.ME, "box")]  # fmt: skip
+    keys = [kit.Key("line", kit.MEALS), kit.Key("dashed_line", kit.MEALS, "dash"), kit.Key("step_line", kit.DOLLARS), kit.Key("thin reference line", kit.DIM, "thin"),
+            kit.Key("area_band", kit.MEALS, "box")]  # fmt: skip
     return kit.figure(draw, "Lines, a range band and date notes", legend=kit.legend(keys))
 
 
 def stacked_chart():
     """vbars (stacked, on a time scale), hline."""
     days = DAYS[:35]
-    rows = [(d, [kit.Seg((i * 7 % 3), kit.ME), kit.Seg(1 if i % 6 == 0 else 0, kit.DD)]) for i, d in enumerate(days)]
+    rows = [(d, [kit.Seg((i * 7 % 3), kit.MEALS), kit.Seg(1 if i % 6 == 0 else 0, kit.DOLLARS, striped=True)]) for i, d in enumerate(days)]
 
     def draw(size):
         p = kit.plot(size, left=30)
@@ -70,18 +70,19 @@ def stacked_chart():
             kit.grid_y(p, y),
             kit.axis_x(p, x),
             kit.vbars(p, x, y, rows, max_width=18),
-            kit.hline(p, y, 1.6, "1.6 a day", kit.tint(kit.ME, 0.35)),
+            kit.hline(p, y, 1.6, "1.6 a day", kit.DIM),
             kit.hover_columns(p, x, [(d, f"{d:%a, %b} {d.day}\n{sum(s.value for s in segs):.0f} meals") for d, segs in rows]),
         ]
 
-    keys = [kit.Key("exchange swipes", kit.ME, "box"), kit.Key("dining-dollar meals", kit.DD, "box"), kit.Key("hline", kit.tint(kit.ME, 0.35), "dash")]
+    keys = [kit.Key("exchange swipes", kit.MEALS, "box"), kit.Key("dining-dollar meals (striped)", kit.DOLLARS, "stripe"), kit.Key("hline", kit.DIM, "dash")]
     return kit.figure(draw, "Stacked vertical bars on a time scale", heights=(220, 240, 260), legend=kit.legend(keys))
 
 
 def grouped_chart():
     """vbars (grouped, on a band scale, with value labels), series_labels."""
     now_, then = (1.4, 1.1, 1.7, 1.9, 0.9, 0.4, 0.6), (1.2, 1.3, 1.5, 1.6, 1.2, 0.7, 0.5)
-    rows = [(wd, [kit.Seg(a, kit.ME, f"{wd}\n{a} a day now"), kit.Seg(b, kit.VIOLET, f"{wd}\n{b} a day then")]) for wd, a, b in zip(WEEKDAYS, now_, then)]
+    past = kit.tint(kit.MEALS, 0.55)  # the same measure in another semester: the same meaning, lighter
+    rows = [(wd, [kit.Seg(a, kit.MEALS, f"{wd}\n{a} a day now"), kit.Seg(b, past, f"{wd}\n{b} a day then")]) for wd, a, b in zip(WEEKDAYS, now_, then)]
 
     def draw(size):
         p = kit.plot(size, left=30, right=86 if not size.compact else 12)
@@ -89,10 +90,10 @@ def grouped_chart():
         y = kit.linear_scale(0, 2, p.y0, p.y1, count=4)
         parts = [kit.grid_y(p, y, lambda v: f"{v:g}"), kit.axis_x(p, x), kit.vbars(p, x, y, rows, grouped=True, label=lambda v: f"{v:g}")]
         if not size.compact:
-            parts.append(kit.series_labels(p, [(y(now_[-1]), "this fall", kit.ME), (y(then[-1]), "last spring", kit.VIOLET)]))
+            parts.append(kit.series_labels(p, [(y(now_[-1]), "this fall", kit.MEALS), (y(then[-1]), "last spring", past)]))
         return parts
 
-    keys = [kit.Key("this fall", kit.ME, "box"), kit.Key("last spring", kit.VIOLET, "box")]
+    keys = [kit.Key("this fall", kit.MEALS, "box"), kit.Key("last spring", past, "box")]
     return kit.figure(draw, "Grouped vertical bars with value labels", heights=(220, 240, 260), legend=kit.legend(keys))
 
 
@@ -105,7 +106,7 @@ def heat_chart():
         p = kit.plot(size, left=36, top=4, bottom=24)
         x = kit.band_scale(hours, p.x0, p.x1, pad=0)
         y = kit.band_scale(WEEKDAYS, p.y1, p.y0, pad=0)
-        cells_drawn = kit.heatmap(x, y, cells, kit.ME, tip=lambda h, wd, v: f"{wd} around {h}:00\n{v:.0f} meals", label=lambda v: f"{v:.0f}")
+        cells_drawn = kit.heatmap(x, y, cells, kit.MEALS, tip=lambda h, wd, v: f"{wd} around {h}:00\n{v:.0f} meals", label=lambda v: f"{v:.0f}")
         return [cells_drawn, kit.axis_y(p, y), kit.axis_x(p, x, labels=lambda h: f"{h}")]
 
     return kit.figure(draw, "A heatmap of meals by hour and weekday", heights=(190, 230, 280))
@@ -113,27 +114,27 @@ def heat_chart():
 
 def hbar_chart():
     """hbar_figure (built on hbars): names, stacked bars, value labels."""
-    snack = kit.tint(kit.DD, 0.5)
+    snack = kit.tint(kit.DOLLARS, 0.5)
     rows = [
-        ("Corner Market", [kit.Seg(12, kit.DD, "Corner Market\n$12 on meals"), kit.Seg(58, snack, "Corner Market\n$58 on snacks")]),
-        ("The Long Name Dining Hall and Grill", [kit.Seg(41, kit.DD, "meals $41"), kit.Seg(6, snack, "snacks $6")]),
-        ("Cafe", [kit.Seg(9, kit.DD, "meals $9")]),
+        ("Corner Market", [kit.Seg(12, kit.DOLLARS, "Corner Market\n$12 on meals"), kit.Seg(58, snack, "Corner Market\n$58 on snacks")]),
+        ("The Long Name Dining Hall and Grill", [kit.Seg(41, kit.DOLLARS, "meals $41"), kit.Seg(6, snack, "snacks $6")]),
+        ("Cafe", [kit.Seg(9, kit.DOLLARS, "meals $9")]),
     ]
-    return kit.hbar_figure(rows, "Horizontal stacked bars", fmt=lambda v: f"${v:,.0f}", legend_keys=[kit.Key("meals", kit.DD, "box"), kit.Key("snacks", snack, "box")])
+    return kit.hbar_figure(rows, "Horizontal stacked bars", fmt=lambda v: f"${v:,.0f}", legend_keys=[kit.Key("meals", kit.DOLLARS, "box"), kit.Key("snacks", snack, "box")])
 
 
 def build(ctx, request) -> dict:
     return {
         "band": [
-            {"value": "104", "label": "exchanges left", "detail": "Of 160.", "color": kit.ME},
-            {"value": "$269", "label": "dining dollars left", "detail": "About 17 meals.", "color": kit.DD},
-            {"value": "+15", "label": "against an even pace", "detail": "Green is good, red is bad, orange is caution.", "color": kit.GREEN},
-            {"value": "Nov 20", "label": "run-out day", "detail": "28 days early.", "color": kit.RED},
+            {"value": "104", "label": "exchanges left", "detail": "Of 160.", "kind": kit.MEALS},
+            {"value": "$269", "label": "dining dollars left", "detail": "About 17 meals.", "kind": kit.DOLLARS},
+            {"value": "+15", "label": "against an even pace", "detail": "Green is good, orange is worth a look, red is a problem.", "kind": kit.GOOD},
+            {"value": "Nov 20", "label": "run-out day", "detail": "28 days early.", "kind": kit.PROBLEM},
         ],
         "notes": [
-            {"level": "bad", "text": "A red note is something that makes the numbers wrong.", "href": ctx.url("/data"), "link": "Go to data"},
-            {"level": "warn", "text": "An orange note is a caution."},
-            {"level": "info", "text": "A blue note is worth knowing."},
+            {"kind": kit.PROBLEM, "text": "A red note is a problem: something that makes the numbers wrong.", "href": ctx.url("/data"), "link": "Go to data"},
+            {"kind": kit.LOOK, "text": "An orange note is worth a look."},
+            {"kind": kit.DAYS, "text": "Any other note takes the color of what it is about. This one is about a date."},
         ],
         "table": {
             "columns": [("Week", False), ("Meals", True), ("Dining dollars", True)],

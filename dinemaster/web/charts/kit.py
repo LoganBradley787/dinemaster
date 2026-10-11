@@ -6,7 +6,7 @@ How a chart is put together:
         p = kit.plot(size, lanes=2)                       # the plot box inside the margins
         x = kit.time_scale(start, end, p.x0, p.x1)        # scales map data to pixels
         y = kit.linear_scale(0, 160, p.y0, p.y1)
-        return [kit.grid_y(p, y), kit.axis_x(p, x), kit.line(x, y, points, kit.ME)]
+        return [kit.grid_y(p, y), kit.axis_x(p, x), kit.line(x, y, points, kit.MEALS)]
 
     svg = kit.figure(draw, "Meal exchanges left, day by day")
 
@@ -22,7 +22,11 @@ Conventions:
       a time scale, a label for a band scale). A value of None breaks a line.
     * Every mark that carries a value takes a tooltip text and writes it as `data-tip`; `app.js`
       shows one shared tooltip for hover, tap and keyboard (arrow keys on a focused chart).
-    * Text is white or dimmed white, never the series colour. Colours come from the Metro palette.
+    * Text is white or dimmed white, never the series colour.
+    * A colour is a meaning (`dinemaster/palette.py`): `kit.MEALS`, `kit.DOLLARS`, `kit.DAYS`,
+      `kit.PLACES` by what a series measures; `kit.GOOD`, `kit.LOOK`, `kit.PROBLEM`, `kit.UNKNOWN`
+      when it judges. `kit.tint(tone)` is a lighter partner with the same meaning. Reference marks
+      (an even pace, an average, today) are `kit.DIM` or `kit.INK`. Any other colour is a TypeError.
 """
 
 from __future__ import annotations
@@ -34,30 +38,31 @@ from datetime import date, timedelta
 
 from markupsafe import Markup, escape
 
-from ...tiles import BLUE, CRIMSON, GREEN, MAGENTA, NAVY, ORANGE, PURPLE, RED, SLATE, TEAL, VIOLET, day, em, num, span
+from ... import palette
+from ...palette import Meaning, Tone, need_tone, tint
+from ...tiles import day, em, num, span
 
 __all__ = [
-    "BLUE", "NAVY", "TEAL", "GREEN", "RED", "ORANGE", "CRIMSON", "PURPLE", "VIOLET", "MAGENTA", "SLATE",
-    "ME", "DD", "POOLED", "INK", "DIM", "BG",
+    "MEALS", "DOLLARS", "DAYS", "PLACES", "GOOD", "LOOK", "PROBLEM", "UNKNOWN",
+    "INK", "DIM", "FAINT", "BG", "Meaning", "Tone", "tint",
 ]  # fmt: skip
 
-BG = "#1B0E45"
-INK = "#FFFFFF"
-DIM = "rgba(255,255,255,.55)"  # reference series (an even pace, an average)
-#: The two pots keep these colours on every chart; a third "both together" series is teal.
-#: Dining dollars are amber, not the palette's ORANGE: that one means "caution" in tiles and number bands.
-ME, DD, POOLED = BLUE, "#D2740A", "#00A3BF"
+#: What a series measures. Meal exchanges (and anything counted in meals) are MEALS, blue;
+#: dining dollars are DOLLARS, teal. The chart teal is lighter than the tile teal so the two
+#: stay apart in one chart; where they share one, the dining-dollar marks are also `striped`.
+MEALS, DOLLARS, DAYS, PLACES = Meaning.MEALS.mark, Meaning.DOLLARS.mark, Meaning.DAYS.mark, Meaning.PLACES.mark
+#: What a series says about how it is going.
+GOOD, LOOK, PROBLEM, UNKNOWN = Meaning.GOOD.mark, Meaning.LOOK.mark, Meaning.PROBLEM.mark, Meaning.UNKNOWN.mark
+#: Neutral reference tones: not meanings, not in the key.
+BG = palette.SURFACE
+INK = palette.INK
+DIM = palette.DIM  # reference series (an even pace, an average)
+FAINT = palette.FAINT  # a blank (a day without a meal)
 
 FONT = 12.5  # label size in viewBox units
 SMALL = 11.5
 LANE = 17.0  # height of one row of labels above the plot
 DASH = "7 5"
-
-
-def tint(color: str, amount: float = 0.45) -> str:
-    """`color` mixed toward white: the lighter partner of a series (snacks beside meals)."""
-    r, g, b = (int(color[i : i + 2], 16) for i in (1, 3, 5))
-    return "#" + "".join(f"{round(c + (255 - c) * amount):02X}" for c in (r, g, b))
 
 
 def text_width(text: str, size: float = FONT) -> float:
@@ -152,11 +157,14 @@ def figure(
 
 @dataclass(frozen=True)
 class Key:
-    """One legend entry. kind: line | dash | thin | box."""
+    """One legend entry. kind: line | dash | thin | box | stripe (the box for a `striped` Seg)."""
 
     label: str
-    color: str
+    color: Tone
     kind: str = "line"
+
+    def __post_init__(self):
+        need_tone(self.color)
 
 
 def legend(keys: Sequence[Key]) -> Markup:
@@ -359,10 +367,11 @@ def axis_y(p: Plot, y: Band, labels: Callable | None = None, width: float | None
 
 
 def hline(
-    p: Plot, y: Linear, value: float, label: str = "", color: str = DIM, dash: str | None = DASH, tip: str | None = None,
+    p: Plot, y: Linear, value: float, label: str = "", color: Tone = DIM, dash: str | None = DASH, tip: str | None = None,
     below: bool = False,
 ) -> Markup:  # fmt: skip
     """A horizontal reference line across the plot, labelled above (or `below`) its right end."""
+    need_tone(color)
     yy = y(value)
     if not (p.y1 - 0.5 <= yy <= p.y0 + 0.5):
         return Markup("")
@@ -386,6 +395,7 @@ def line(
     x, y, points: Sequence[tuple], color: str, width: float = 2.5, dash: str | None = None, step: bool = False, opacity: float = 1.0
 ) -> Markup:
     """A line through `points` [(key, value), ...]. A None value leaves a gap. `step` holds each value to the next key."""
+    need_tone(color)
     d, pen_up, prev = [], True, None
     for pt in _xy(x, y, points):
         if pt is None:
@@ -419,6 +429,7 @@ def dashed_line(x, y, points: Sequence[tuple], color: str, width: float = 2.0) -
 
 def area_band(x, y, lo: Sequence[tuple], hi: Sequence[tuple], color: str, opacity: float = 0.22, tip: str | None = None) -> Markup:
     """A filled range between two series with the same keys (a forecast's likely range)."""
+    need_tone(color)
     top = [pt for pt in _xy(x, y, hi) if pt is not None]
     bottom = [pt for pt in _xy(x, y, lo) if pt is not None]
     if not top or not bottom:
@@ -429,6 +440,7 @@ def area_band(x, y, lo: Sequence[tuple], hi: Sequence[tuple], color: str, opacit
 
 def points(x, y, pts: Sequence[tuple], color: str, r: float = 4.0, hollow: bool = False, tips: Sequence[str] | None = None) -> Markup:
     """Point markers, each with a ring in the background colour. `hollow` draws an outline (a part value)."""
+    need_tone(color)
     out = []
     for i, pt in enumerate(_xy(x, y, pts)):
         if pt is None:
@@ -441,6 +453,7 @@ def points(x, y, pts: Sequence[tuple], color: str, r: float = 4.0, hollow: bool 
 
 def end_label(p: Plot, x, y, key, value: float, label: str, color: str) -> Markup:
     """A dot on one point with its value beside it: the direct label for where a line stands now."""
+    need_tone(color)
     cx, cy = x(key), y(value)
     w = text_width(label, FONT + 1)
     left = cx + 8 + w > p.x1
@@ -465,6 +478,7 @@ def series_labels(p: Plot, items: Sequence[tuple[float, str, str]], gap: float =
             row[1] -= overflow
     out = []
     for true_y, yy, s, color in placed:
+        need_tone(color)
         out.append(f'<rect x="{_n(p.x1 + 6)}" y="{_n(yy - 4)}" width="8" height="8" fill="{color}"/>')
         if abs(true_y - yy) > 1:
             out.append(f'<line class="leader" x1="{_n(p.x1)}" y1="{_n(true_y)}" x2="{_n(p.x1 + 6)}" y2="{_n(yy)}"/>')
@@ -494,11 +508,20 @@ def hover_columns(p: Plot, x: Time | Band, tips: Sequence[tuple]) -> Markup:
 
 @dataclass(frozen=True)
 class Seg:
-    """One bar, or one segment of a stacked bar."""
+    """One bar, or one segment of a stacked bar.
+
+    `striped` cuts thin stripes into the bar: the second cue, besides colour, that tells two
+    series in one chart apart (dining-dollar meals stacked on exchange swipes). Use `Key(..., "stripe")`
+    for its legend entry.
+    """
 
     value: float
-    color: str
+    color: Tone
     tip: str = ""
+    striped: bool = False
+
+    def __post_init__(self):
+        need_tone(self.color)
 
 
 def _label_fits(labels: Sequence[str], room: float) -> bool:
@@ -534,7 +557,7 @@ def vbars(
                 top = y(seg.value)
                 bx = left + i * width
                 inner = width - (gap if width > 4 else 0)
-                out.append(_rect(bx + (width - inner) / 2, min(top, base), inner, abs(base - top), seg.color, seg.tip))
+                out.append(_rect(bx + (width - inner) / 2, min(top, base), inner, abs(base - top), seg.color, seg.tip, seg.striped))
                 if label:
                     captions.append((bx + width / 2, min(top, base) - 4, label(seg.value)))
         else:
@@ -545,7 +568,7 @@ def vbars(
                 y_lo, y_hi = y(run), y(run + seg.value)
                 height = y_lo - y_hi
                 cut = gap if run > 0 and height > gap * 2 else 0
-                out.append(_rect(cx - width / 2, y_hi, width, height - cut, seg.color, seg.tip))
+                out.append(_rect(cx - width / 2, y_hi, width, height - cut, seg.color, seg.tip, seg.striped))
                 run += seg.value
             if label and run > 0:
                 captions.append((cx, y(run) - 4, label(run)))
@@ -579,7 +602,7 @@ def hbars(
             top = cy - width * len(segs) / 2
             for i, seg in enumerate(segs):
                 end = x(seg.value)
-                out.append(_rect(base, top + i * width + gap / 2, max(0.0, end - base), width - gap, seg.color, seg.tip))
+                out.append(_rect(base, top + i * width + gap / 2, max(0.0, end - base), width - gap, seg.color, seg.tip, seg.striped))
                 if label:
                     out.append(str(text(end + 6, top + (i + 0.5) * width + SMALL * 0.34, label(seg.value), cls="lbl", size=SMALL)))
         else:
@@ -590,15 +613,29 @@ def hbars(
                 x_lo, x_hi = x(run), x(run + seg.value)
                 length = x_hi - x_lo
                 cut = gap if run > 0 and length > gap * 2 else 0
-                out.append(_rect(x_lo + cut, cy - width / 2, length - cut, width, seg.color, seg.tip))
+                out.append(_rect(x_lo + cut, cy - width / 2, length - cut, width, seg.color, seg.tip, seg.striped))
                 run += seg.value
             if label:
                 out.append(str(text(x(run) + 6, cy + FONT * 0.34, label(run), cls="lbl")))
     return Markup("".join(out))
 
 
-def _rect(x: float, y: float, w: float, h: float, color: str, tip: str = "") -> str:
-    return f'<rect class="bar" x="{_n(x)}" y="{_n(y)}" width="{_n(max(0.0, w))}" height="{_n(max(0.0, h))}" fill="{color}"{_tip(tip)}/>'
+STRIPE, STRIPE_GAP = 1.5, 5.0
+
+
+def _rect(x: float, y: float, w: float, h: float, color: Tone, tip: str = "", striped: bool = False) -> str:
+    w, h = max(0.0, w), max(0.0, h)
+    out = f'<rect class="bar" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" fill="{need_tone(color)}"{_tip(tip)}/>'
+    if not striped:
+        return out
+    # stripes in the background colour, across the short side, stepping along the long one
+    along, k = (h, 0) if h >= w else (w, 1)
+    at = STRIPE_GAP - STRIPE
+    while at + STRIPE < along:
+        box = (x, y + at, w, STRIPE) if k == 0 else (x + at, y, STRIPE, h)
+        out += f'<rect class="stripe" x="{_n(box[0])}" y="{_n(box[1])}" width="{_n(box[2])}" height="{_n(box[3])}"/>'
+        at += STRIPE_GAP
+    return out
 
 
 def hbar_figure(
@@ -646,7 +683,7 @@ def heatmap(
     x: Band,
     y: Band,
     cells: dict[tuple, float],
-    color: str = BLUE,
+    color: Tone = MEALS,
     vmax: float | None = None,
     tip: Callable[[object, object, float], str] | None = None,
     label: Callable[[float], str] | None = None,
@@ -657,6 +694,7 @@ def heatmap(
     Cells with no value (or zero) are a faint blank. `label` writes the value inside each cell
     when it fits.
     """
+    need_tone(color)
     top = vmax if vmax is not None else max((v for v in cells.values() if v), default=1.0)
     out = []
     w, h = x.step - gap, y.step - gap

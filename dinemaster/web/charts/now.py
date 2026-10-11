@@ -12,8 +12,13 @@ from ...config import Config
 from ...tiles import cents, day, num, plural
 from . import kit
 
-#: Days in a week by how many meals they had: one hue, lighter for more; a day without a meal is a faint blank.
-MIX = (("0", "no meal", "rgba(255,255,255,.17)"), ("1", "one meal", "#2A58B8"), ("2", "two meals", "#4C8DF6"), ("3+", "three or more", "#A9CBFF"))
+#: Days in a week by how many meals they had: the meals hue, lighter for more; a day without a meal is a faint blank.
+MIX = (
+    ("0", "no meal", kit.FAINT),
+    ("1", "one meal", kit.tint(kit.MEALS, -0.22)),
+    ("2", "two meals", kit.tint(kit.MEALS, 0.25)),
+    ("3+", "three or more", kit.tint(kit.MEALS, 0.62)),
+)
 
 
 def balance_chart(
@@ -22,7 +27,7 @@ def balance_chart(
     actual: pd.Series,
     ideal: pd.Series,
     projection: pd.Series | None,
-    color: str,
+    color: kit.Tone,
     label: str,
     fmt: Callable[[float], str] = lambda v: num(v, 0),
     today_label: str = "today",
@@ -85,7 +90,7 @@ def daily_meals_chart(cfg: Config, daily: pd.DataFrame, pace_me: float | None, p
     rows, tips = [], []
     for d, row in daily.iterrows():
         swipes, dd_meals = float(row["me_swipes"]), float(row["dd_meals"])
-        rows.append((d, [kit.Seg(swipes, kit.ME), kit.Seg(dd_meals, kit.DD)]))
+        rows.append((d, [kit.Seg(swipes, kit.MEALS), kit.Seg(dd_meals, kit.DOLLARS, striped=True)]))
         lines = [f"{d:%a}, {day(d)}", plural(swipes, "exchange swipe")]
         if dd_meals:
             lines.append(plural(dd_meals, "dining-dollar meal"))
@@ -105,19 +110,19 @@ def daily_meals_chart(cfg: Config, daily: pd.DataFrame, pace_me: float | None, p
         short = size.compact
         if pace_me is not None and pace_me <= y.hi:
             text = f"{num(pace_me, 2)} a day uses the exchanges" if not short else f"{num(pace_me, 2)} uses exchanges"
-            parts.append(kit.hline(p, y, pace_me, text, kit.tint(kit.ME, 0.35), below=both and pace_me < pace_with_dd))
+            parts.append(kit.hline(p, y, pace_me, text, kit.DIM, below=both and pace_me < pace_with_dd))
         if both and pace_with_dd <= y.hi:
             text = f"{num(pace_with_dd, 2)} a day with dining dollars" if not short else f"{num(pace_with_dd, 2)} with dining $"
-            parts.append(kit.hline(p, y, pace_with_dd, text, kit.tint(kit.DD, 0.35), below=pace_with_dd < pace_me))
+            parts.append(kit.hline(p, y, pace_with_dd, text, kit.DIM, below=pace_with_dd < pace_me))
         parts.append(kit.hover_columns(p, x, tips))
         return parts
 
-    keys = [kit.Key("exchange swipes", kit.ME, "box")]
+    keys = [kit.Key("exchange swipes", kit.MEALS, "box")]
     if float(daily["dd_meals"].sum()) > 0:
-        keys.append(kit.Key("dining-dollar meals", kit.DD, "box"))
+        keys.append(kit.Key("dining-dollar meals", kit.DOLLARS, "stripe"))
     keys.append(kit.Key("7-day average", kit.INK))
     if paces:
-        keys.append(kit.Key("the pace that uses everything", kit.tint(kit.ME, 0.35), "dash"))
+        keys.append(kit.Key("the pace that uses everything", kit.DIM, "dash"))
     return kit.figure(draw, label, legend=kit.legend(keys))
 
 
@@ -161,20 +166,20 @@ def weekly_mix_chart(daily: pd.DataFrame) -> Markup:
 def me_places_chart(counts: pd.Series) -> Markup:
     """Exchange swipes by place, most first."""
     ordered = counts.sort_values(ascending=False)
-    rows = [(str(place), [kit.Seg(float(n), kit.ME, f"{place}\n{plural(float(n), 'swipe')}")]) for place, n in ordered.items()]
+    rows = [(str(place), [kit.Seg(float(n), kit.MEALS, f"{place}\n{plural(float(n), 'swipe')}")]) for place, n in ordered.items()]
     return kit.hbar_figure(rows, "Exchange swipes by place", empty_text="No swipes yet.")
 
 
 def dd_places_chart(by_location: dict[str, dict[str, float]]) -> Markup:
     """Dining dollars by place, meals and snacks apart, most first."""
-    snack = kit.tint(kit.DD, 0.5)
+    snack = kit.tint(kit.DOLLARS, 0.5)
     ordered = sorted(by_location.items(), key=lambda item: -(item[1]["meal_amount"] + item[1]["snack_amount"]))
     rows = []
     for place, v in ordered:
         segs = [
-            kit.Seg(float(v["meal_amount"]), kit.DD, f"{place}\n{cents(v['meal_amount'])} on {plural(v['meal_count'], 'meal')}"),
+            kit.Seg(float(v["meal_amount"]), kit.DOLLARS, f"{place}\n{cents(v['meal_amount'])} on {plural(v['meal_count'], 'meal')}"),
             kit.Seg(float(v["snack_amount"]), snack, f"{place}\n{cents(v['snack_amount'])} on {plural(v['snack_count'], 'snack')}"),
         ]
         rows.append((str(place), segs))
-    keys = [kit.Key("meals", kit.DD, "box"), kit.Key("snacks", snack, "box")]
+    keys = [kit.Key("meals", kit.DOLLARS, "box"), kit.Key("snacks", snack, "box")]
     return kit.hbar_figure(rows, "Dining dollars spent by place", fmt=lambda v: f"${v:,.0f}", legend_keys=keys, empty_text="No dining dollars spent yet.")

@@ -1,7 +1,8 @@
 """Text formatters shared by pages and templates. `register(env)` adds them as Jinja filters.
 
 In a template: `{{ x|num }}`, `{{ x|money }}`, `{{ x|cents }}`, `{{ d|day }}`, `{{ n|ago }}`,
-`{{ p|chance }}`, `{{ n|plural("meal") }}`, `{{ x|signed }}`, `{{ x|pct }}`, `{{ d|weekday }}`.
+`{{ p|chance }}`, `{{ n|plural("meal") }}`, `{{ x|signed }}`, `{{ x|pct }}`, `{{ d|weekday }}`,
+`{{ text|dates }}` (keeps "Dec 18" on one line), `{{ kind|fill }}` (a palette meaning's colour).
 In Python: `from dinemaster.web import fmt` then `fmt.money(12.5)`.
 """
 
@@ -9,7 +10,8 @@ from __future__ import annotations
 
 from datetime import date
 
-from ..tiles import ago, cents, chance, clip, day, money, num, plural, span
+from ..palette import fill, need_meaning
+from ..tiles import ago, cents, chance, clip, day, keep_dates, money, num, plural, span
 
 __all__ = ["ago", "cents", "chance", "clip", "day", "money", "num", "plural", "span", "signed", "pct", "weekday", "between", "register"]
 
@@ -43,5 +45,5 @@ def between(lo: float, hi: float, each=lambda x: num(x, 0)) -> str:
 def register(env) -> None:
     env.filters.update(
         num=num, money=money, cents=cents, day=day, ago=ago, chance=chance, plural=plural, span=span,
-        signed=signed, pct=pct, weekday=weekday,
+        signed=signed, pct=pct, weekday=weekday, dates=keep_dates, fill=fill, meaning=need_meaning,
     )  # fmt: skip

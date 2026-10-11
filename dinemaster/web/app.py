@@ -5,6 +5,7 @@ Routes:
     GET  /<slug>              a section: `pages/<slug>.build(ctx, request)` -> `templates/<slug>.html`
     POST /<slug>[/<action>]   `pages/<slug>.post(ctx, request, action, form)` -> a URL to redirect to
     GET  /kit                 every component and chart-kit mark on one page (a reference for building sections)
+    GET  /static/palette.css  the colour variables, written from dinemaster/palette.py
     /static/...               metro.css, app.js, sections/<slug>.css
 
 A section never edits this file or base.html: it owns its page module, template, optional
@@ -24,7 +25,7 @@ from fastapi.responses import RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from .. import tiles
+from .. import palette, tiles
 from . import fmt
 from .context import CalendarCache, PageContext, load_context
 from .sections import SECTIONS, TILE_LINKS, Section
@@ -68,10 +69,15 @@ def create_app(config_path: Path | None = None, today: Callable[[], date] | None
     `today` replaces the clock (tests pin the day with it).
     """
     app = FastAPI(title="DineMaster", docs_url=None, redoc_url=None, openapi_url=None)
+
+    @app.get("/static/palette.css", name="palette")  # before the mount, so it wins over the folder
+    def palette_css() -> Response:
+        return Response(palette.css_vars(), media_type="text/css")
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
     templates = Jinja2Templates(directory=HERE / "templates")
     fmt.register(templates.env)
-    templates.env.globals.update(static=_static_url, sections=SECTIONS)
+    templates.env.globals.update(static=_static_url, sections=SECTIONS, palette_key=palette.KEY)
     calendar_cache = CalendarCache()
     app.state.calendar_cache = calendar_cache
 

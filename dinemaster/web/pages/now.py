@@ -17,9 +17,6 @@ from ..charts import kit
 from ..charts import now as charts
 from ..context import PageContext
 
-QUIET = "rgba(255,255,255,.45)"
-
-
 def headline(ctx: PageContext) -> tuple[str, str]:
     """The verdict in one sentence, and a second, quieter sentence with the figures behind it."""
     cfg, bal, f = ctx.cfg, ctx.metrics.balances, ctx.forecast.me
@@ -50,39 +47,39 @@ def headline(ctx: PageContext) -> tuple[str, str]:
 
 
 def notes(ctx: PageContext) -> list[dict]:
-    """Things to know before trusting the numbers. level: bad | warn | info."""
+    """Things to know before trusting the numbers. kind: PROBLEM or LOOK when it warns, else what the note is about."""
     cfg, bal, fc = ctx.cfg, ctx.metrics.balances, ctx.forecast
     end = fmt.day(cfg.semester_end)
     data = {"href": ctx.url("/data"), "link": "Go to data"}
     out: list[dict] = []
     if ctx.now.notice:
-        out.append({"level": "warn", "text": ctx.now.notice})
+        out.append({"kind": kit.LOOK, "text": ctx.now.notice})
     if ctx.stale:
         out.append({
-            "level": "bad",
+            "kind": kit.PROBLEM,
             "text": f"Your data is {ctx.behind} days old. It ends {fmt.day(ctx.counts.a)}. This page describes that day, not today.",
             **data,
         })  # fmt: skip
     elif ctx.behind:
-        out.append({"level": "info", "text": f"These figures are for {fmt.day(ctx.counts.a)}, the last day in your data."})
+        out.append({"kind": kit.DAYS, "text": f"These figures are for {fmt.day(ctx.counts.a)}, the last day in your data."})
     for pot, warning in (("Meal exchanges", bal.me_warning), ("Dining dollars", bal.dd_warning)):
         if warning:
-            out.append({"level": "warn", "text": f"{pot} do not add up: {warning}", **data})
-    out += [{"level": "warn", "text": f"Reading the files: {w}", **data} for w in ctx.report.warnings]
+            out.append({"kind": kit.LOOK, "text": f"{pot} do not add up: {warning}", **data})
+    out += [{"kind": kit.LOOK, "text": f"Reading the files: {w}", **data} for w in ctx.report.warnings]
     jumps = [b for b in ctx.report.chain_breaks if b["timestamp"].date() >= cfg.data_cutoff]
     if jumps:
         times = "once" if len(jumps) == 1 else f"{len(jumps)} times"
-        out.append({"level": "warn", "text": f"The dining site changed a balance {times} this semester with no transaction to explain it.", **data})
+        out.append({"kind": kit.LOOK, "text": f"The dining site changed a balance {times} this semester with no transaction to explain it.", **data})
     if fcast.going_unused(cfg, fc.me) and cfg.exchange_price:
         worth = round(fc.me.leftover_p50) * cfg.exchange_price
         out.append({
-            "level": "warn",
+            "kind": kit.LOOK,
             "text": f"The unused exchanges are worth about {fmt.money(worth)} of the plan.",
             "href": ctx.url("/plan"), "link": "See how to use them",
         })  # fmt: skip
     if fc.dd.available and fc.dd.leftover_p50 is not None and fc.dd.leftover_p50 >= cfg.dd_leftover_flag:
         fate = "It carries into spring." if cfg.dd_rollover else "It will be lost."
-        out.append({"level": "info", "text": f"About {fmt.money(fc.dd.leftover_p50)} in dining dollars is likely to be left on {end}. {fate}"})
+        out.append({"kind": kit.DOLLARS, "text": f"About {fmt.money(fc.dd.leftover_p50)} in dining dollars is likely to be left on {end}. {fate}"})
     return out
 
 
@@ -98,13 +95,13 @@ def band(ctx: PageContext) -> list[dict]:
     else:
         dd_detail = f"About {fmt.plural(cfg.round_meals(bal.dd_left / cfg.meal_price), 'meal')}."
     stats = [
-        {"value": fmt.num(bal.me_left, 0), "label": "exchanges left", "detail": f"Of {fmt.num(cfg.starting_me, 0)}.", "color": kit.ME},
-        {"value": fmt.money(bal.dd_left), "label": "dining dollars left", "detail": dd_detail, "color": kit.DD},
+        {"value": fmt.num(bal.me_left, 0), "label": "exchanges left", "detail": f"Of {fmt.num(cfg.starting_me, 0)}.", "kind": kit.MEALS},
+        {"value": fmt.money(bal.dd_left), "label": "dining dollars left", "detail": dd_detail, "kind": kit.DOLLARS},
         {
             "value": fmt.pct(ctx.now.progress),
             "label": "of the semester done",
             "detail": f"{days_left} {usable}{'day' if days_left == 1 else 'days'} to go.",
-            "color": QUIET,
+            "kind": kit.DAYS,
         },
     ]
     delta = targets.strict_delta
@@ -112,24 +109,24 @@ def band(ctx: PageContext) -> list[dict]:
     if delta is not None:
         if delta >= 0:
             detail = "More exchanges left than even use would leave."
-            color = kit.ORANGE if unused and delta > 0 else kit.GREEN
+            kind = kit.LOOK if unused and delta > 0 else kit.GOOD
         else:
-            detail, color = "Fewer exchanges left than even use would leave.", kit.RED
-        stats.append({"value": fmt.signed(delta), "label": "against an even pace", "detail": detail, "color": color})
+            detail, kind = "Fewer exchanges left than even use would leave.", kit.PROBLEM
+        stats.append({"value": fmt.signed(delta), "label": "against an even pace", "detail": detail, "kind": kind})
     f = fc.me
     if f.available and f.leftover_p50 is not None:
         likely = fmt.between(f.leftover_lo, f.leftover_hi)
         odds = f"{fmt.chance(1 - f.prob_lasts)} chance you use them all." if unused else f"{fmt.chance(f.prob_lasts)} chance they last."
-        color = kit.GREEN if f.prob_lasts >= fcast.SAFE_CHANCE else kit.ORANGE if f.prob_lasts >= 0.5 else kit.RED
-        color = kit.ORANGE if unused else color
-        stats.append({"value": fmt.num(f.leftover_p50, 0), "label": f"unused on {end}", "detail": f"Likely {likely}. {odds}", "color": color})
+        kind = kit.GOOD if f.prob_lasts >= fcast.SAFE_CHANCE else kit.LOOK if f.prob_lasts >= 0.5 else kit.PROBLEM
+        kind = kit.LOOK if unused else kind
+        stats.append({"value": fmt.num(f.leftover_p50, 0), "label": f"unused on {end}", "detail": f"Likely {likely}. {odds}", "kind": kind})
     elif not cfg.dd_rollover and targets.pooled_delta is not None:
         ahead = targets.pooled_delta >= 0
         stats.append({
             "value": fmt.signed(targets.pooled_delta),
             "label": "meals ahead" if ahead else "meals behind",
             "detail": "Counting dining dollars as meals.",
-            "color": kit.GREEN if ahead else kit.RED,
+            "kind": kit.GOOD if ahead else kit.PROBLEM,
         })  # fmt: skip
     return stats
 
@@ -198,7 +195,7 @@ def build(ctx: PageContext, request) -> dict:
     me_burn = metrics.burn[v]["me"]
     me_proj = m.projection_series(cfg, a, bal.me_left, me_burn.rate, away) if me_burn.rate else None
     me_chart = charts.balance_chart(
-        cfg, a, daily["me_bal"], m.ideal_series(cfg, cfg.starting_me, away), me_proj, kit.ME,
+        cfg, a, daily["me_bal"], m.ideal_series(cfg, cfg.starting_me, away), me_proj, kit.MEALS,
         "Meal exchanges left, day by day, against an even pace", today_label=today_label,
     )  # fmt: skip
 
@@ -208,7 +205,7 @@ def build(ctx: PageContext, request) -> dict:
     dd_burn = metrics.burn[v]["dd"]
     dd_proj = m.projection_series(cfg, a, bal.dd_left / per, dd_burn.rate / per, away) if dd_burn.rate else None
     dd_chart = charts.balance_chart(
-        cfg, a, daily["dd_bal"] / per, m.ideal_series(cfg, cfg.starting_dd / per, away), dd_proj, kit.DD,
+        cfg, a, daily["dd_bal"] / per, m.ideal_series(cfg, cfg.starting_dd / per, away), dd_proj, kit.DOLLARS,
         "Dining dollars left, day by day, against an even pace",
         fmt=(lambda x: fmt.num(x, 1)) if in_meals else fmt.money, today_label=today_label,
     )  # fmt: skip
@@ -223,7 +220,7 @@ def build(ctx: PageContext, request) -> dict:
         total = metrics.targets[v].pooled_total
         ideal = m.ideal_series(cfg, total, away) if total is not None else pd.Series(dtype=float)
         pooled = charts.balance_chart(
-            cfg, a, daily["me_bal"] + daily["dd_bal"] / cfg.meal_price, ideal, None, kit.POOLED,
+            cfg, a, daily["me_bal"] + daily["dd_bal"] / cfg.meal_price, ideal, None, kit.MEALS,  # both pots counted as meals: the number is meals
             "Meals left counting both pots, day by day", fmt=lambda x: fmt.num(x, 0), today_label=today_label,
         )  # fmt: skip
 

@@ -74,7 +74,10 @@ def test_fit_cuts_long_text_with_an_ellipsis():
 
 
 def test_tint_moves_a_colour_toward_white():
-    assert kit.tint("#000000", 0.5) == "#808080" and kit.tint(kit.DD, 0) == kit.DD.upper()
+    light = kit.tint(kit.DOLLARS, 0.5)
+    assert light == "#80D4D4" and kit.tint(kit.DOLLARS, 0) == kit.DOLLARS.upper()
+    assert light.meaning is kit.Meaning.DOLLARS  # a tint keeps what the colour means
+    assert kit.tint(kit.MEALS, -1) == "#000000"  # a negative amount goes toward black
 
 
 def test_text_is_escaped():
@@ -95,48 +98,48 @@ def series(n=30, start=150.0, step=-1.0):
 
 def test_line_draws_one_path_and_breaks_at_missing_values():
     p, x, y = scales()
-    out = kit.line(x, y, series(5), kit.ME)
-    assert count(out, "path") == 1 and out.count("L") == 4 and f'stroke="{kit.ME}"' in out
-    gap = kit.line(x, y, [(START, 1.0), (START + timedelta(days=1), None), (START + timedelta(days=2), 3.0)], kit.ME)
+    out = kit.line(x, y, series(5), kit.MEALS)
+    assert count(out, "path") == 1 and out.count("L") == 4 and f'stroke="{kit.MEALS}"' in out
+    gap = kit.line(x, y, [(START, 1.0), (START + timedelta(days=1), None), (START + timedelta(days=2), 3.0)], kit.MEALS)
     assert gap.count("M") == 2 and gap.count("L") == 0
-    assert kit.line(x, y, [], kit.ME) == "" and kit.line(x, y, [(START, None)], kit.ME) == ""
+    assert kit.line(x, y, [], kit.MEALS) == "" and kit.line(x, y, [(START, None)], kit.MEALS) == ""
 
 
 def test_step_and_dashed_lines():
     p, x, y = scales()
-    step = kit.step_line(x, y, series(4), kit.ME)
+    step = kit.step_line(x, y, series(4), kit.MEALS)
     assert step.count("H") == 3 and step.count("V") == 3
-    assert "stroke-dasharray" in kit.dashed_line(x, y, series(4), kit.ME)
-    assert "stroke-dasharray" not in kit.line(x, y, series(4), kit.ME)
+    assert "stroke-dasharray" in kit.dashed_line(x, y, series(4), kit.MEALS)
+    assert "stroke-dasharray" not in kit.line(x, y, series(4), kit.MEALS)
 
 
 def test_area_band_is_one_closed_shape():
     p, x, y = scales()
-    out = kit.area_band(x, y, series(10, 100), series(10, 120), kit.ME, tip="likely range")
+    out = kit.area_band(x, y, series(10, 100), series(10, 120), kit.MEALS, tip="likely range")
     assert count(out, "path") == 1 and out.rstrip('"/>').count("Z") == 1 and 'data-tip="likely range"' in out
-    assert kit.area_band(x, y, [], [], kit.ME) == ""
+    assert kit.area_band(x, y, [], [], kit.MEALS) == ""
 
 
 def test_points_carry_tooltips_and_can_be_hollow():
     p, x, y = scales()
-    out = kit.points(x, y, series(3), kit.ME, tips=["a", "b", "c"])
-    assert count(out, "circle") == 3 and out.count("data-tip=") == 3 and f'fill="{kit.ME}"' in out
-    assert f'fill="{kit.BG}"' in kit.points(x, y, series(1), kit.ME, hollow=True)
-    assert kit.points(x, y, [], kit.ME) == ""
+    out = kit.points(x, y, series(3), kit.MEALS, tips=["a", "b", "c"])
+    assert count(out, "circle") == 3 and out.count("data-tip=") == 3 and f'fill="{kit.MEALS}"' in out
+    assert f'fill="{kit.BG}"' in kit.points(x, y, series(1), kit.MEALS, hollow=True)
+    assert kit.points(x, y, [], kit.MEALS) == ""
 
 
 def test_end_label_stays_inside_the_plot():
     p, x, y = scales(S)
-    left = kit.end_label(p, x, y, END, 20, "20 left", kit.ME)  # at the right edge the label flips to the left
+    left = kit.end_label(p, x, y, END, 20, "20 left", kit.MEALS)  # at the right edge the label flips to the left
     assert 'text-anchor="end"' in left and count(left, "circle") == 1
-    assert 'text-anchor="start"' in kit.end_label(p, x, y, START, 20, "20 left", kit.ME)
+    assert 'text-anchor="start"' in kit.end_label(p, x, y, START, 20, "20 left", kit.MEALS)
 
 
 def test_stacked_bars_have_one_rect_per_segment_with_a_tooltip():
     p = kit.plot(L)
     x = kit.band_scale(["a", "b"], p.x0, p.x1)
     y = kit.linear_scale(0, 4, p.y0, p.y1)
-    rows = [("a", [kit.Seg(2, kit.ME, "a: 2 swipes"), kit.Seg(1, kit.DD, "a: 1 meal")]), ("b", [kit.Seg(0, kit.ME), kit.Seg(3, kit.DD, "b: 3 meals")])]
+    rows = [("a", [kit.Seg(2, kit.MEALS, "a: 2 swipes"), kit.Seg(1, kit.DOLLARS, "a: 1 meal")]), ("b", [kit.Seg(0, kit.MEALS), kit.Seg(3, kit.DOLLARS, "b: 3 meals")])]
     out = kit.vbars(p, x, y, rows, label=lambda v: f"{v:.0f}")
     assert count(out, "rect") == 3  # the empty segment is not drawn
     assert out.count("data-tip=") == 3 and 'data-tip="a: 2 swipes"' in out
@@ -147,7 +150,7 @@ def test_grouped_bars_sit_side_by_side_with_a_label_each():
     p = kit.plot(L)
     x = kit.band_scale(["a", "b"], p.x0, p.x1)
     y = kit.linear_scale(0, 4, p.y0, p.y1)
-    rows = [("a", [kit.Seg(2, kit.ME), kit.Seg(1, kit.DD)]), ("b", [kit.Seg(4, kit.ME), kit.Seg(3, kit.DD)])]
+    rows = [("a", [kit.Seg(2, kit.MEALS), kit.Seg(1, kit.DOLLARS)]), ("b", [kit.Seg(4, kit.MEALS), kit.Seg(3, kit.DOLLARS)])]
     out = kit.vbars(p, x, y, rows, grouped=True, label=lambda v: f"{v:.0f}")
     xs = [float(v) for v in re.findall(r'<rect class="bar" x="([\d.]+)"', out)]
     assert len(xs) == 4 and xs[0] < xs[1] < xs[2] < xs[3]
@@ -159,7 +162,7 @@ def test_bar_labels_are_left_out_when_they_would_not_fit():
     days = [START + timedelta(days=i) for i in range(100)]
     x = kit.time_scale(days[0], days[-1], p.x0, p.x1)
     y = kit.linear_scale(0, 4, p.y0, p.y1)
-    out = kit.vbars(p, x, y, [(d, [kit.Seg(2, kit.ME)]) for d in days], label=lambda v: f"{v:.2f}")
+    out = kit.vbars(p, x, y, [(d, [kit.Seg(2, kit.MEALS)]) for d in days], label=lambda v: f"{v:.2f}")
     assert count(out, "rect") == 100 and texts(out) == []
 
 
@@ -167,7 +170,7 @@ def test_horizontal_bars_label_the_end_of_each_bar():
     p = kit.plot(L, left=120, right=40)
     x = kit.linear_scale(0, 20, p.x0, p.x1)
     y = kit.band_scale(["Hall", "Cafe"], p.y1, p.y0)
-    rows = [("Hall", [kit.Seg(12, kit.DD, "meals"), kit.Seg(6, kit.tint(kit.DD), "snacks")]), ("Cafe", [kit.Seg(4, kit.DD, "meals")])]
+    rows = [("Hall", [kit.Seg(12, kit.DOLLARS, "meals"), kit.Seg(6, kit.tint(kit.DOLLARS), "snacks")]), ("Cafe", [kit.Seg(4, kit.DOLLARS, "meals")])]
     out = kit.hbars(p, x, y, rows, label=lambda v: f"${v:.0f}")
     assert count(out, "rect") == 3 and texts(out) == ["$18", "$4"]
     grouped = kit.hbars(p, x, y, rows, grouped=True, label=lambda v: f"${v:.0f}")
@@ -176,7 +179,7 @@ def test_horizontal_bars_label_the_end_of_each_bar():
 
 
 def test_hbar_figure_names_every_row_at_every_size_and_handles_no_rows():
-    rows = [("North Hall", [kit.Seg(12, kit.ME, "North Hall\n12 swipes")]), ("Cafe", [kit.Seg(4, kit.ME, "Cafe\n4 swipes")])]
+    rows = [("North Hall", [kit.Seg(12, kit.MEALS, "North Hall\n12 swipes")]), ("Cafe", [kit.Seg(4, kit.MEALS, "Cafe\n4 swipes")])]
     out = kit.hbar_figure(rows, "Swipes by place")
     assert count(out, "svg") == 3 and out.count(">North Hall<") == 3 and out.count(">12<") == 3
     assert "North Hall\n12 swipes" in out
@@ -211,7 +214,7 @@ def test_grid_and_axes_label_sparsely():
 
 def test_hline_is_labelled_and_skipped_when_off_the_plot():
     p, x, y = scales()
-    out = kit.hline(p, y, 80, "1.6 a day", kit.ME, tip="pace")
+    out = kit.hline(p, y, 80, "1.6 a day", kit.MEALS, tip="pace")
     assert count(out, "line") == 1 and texts(out) == ["1.6 a day"] and 'data-tip="pace"' in out
     assert kit.hline(p, y, 999, "off the top") == ""
 
@@ -259,7 +262,7 @@ def test_semester_notes_come_from_the_config():
 
 def test_series_labels_are_moved_apart():
     p = kit.plot(L, right=90)
-    out = kit.series_labels(p, [(100.0, "this fall", kit.ME), (103.0, "last spring", kit.VIOLET)])
+    out = kit.series_labels(p, [(100.0, "this fall", kit.MEALS), (103.0, "last spring", kit.tint(kit.MEALS))])
     ys = [float(v) for v in re.findall(r'<text x="[\d.]+" y="([\d.]+)"', out)]
     assert texts(out) == ["this fall", "last spring"] and ys[1] - ys[0] >= 15 and 'class="leader"' in out
     assert kit.series_labels(p, []) == ""
@@ -283,7 +286,7 @@ def test_figure_draws_three_sizes_with_a_label_and_legend():
         seen.append(size)
         return [kit.text(0, 10, "compact" if size.compact else "roomy"), None, ""]
 
-    out = kit.figure(draw, 'Meals "left" by day', heights=(200, 250, 300), legend=kit.legend([kit.Key("what is left", kit.ME), kit.Key("pace", kit.DIM, "dash")]))
+    out = kit.figure(draw, 'Meals "left" by day', heights=(200, 250, 300), legend=kit.legend([kit.Key("what is left", kit.MEALS), kit.Key("pace", kit.DIM, "dash")]))
     assert isinstance(out, Markup) and out.startswith('<figure class="chart" tabindex="0"')
     assert [(s.name, s.w, s.h) for s in seen] == [("s", 380, 200), ("m", 660, 250), ("l", 1080, 300)]
     assert 'viewBox="0 0 380 200"' in out and 'viewBox="0 0 1080 300"' in out and 'class="v-m"' in out
@@ -298,5 +301,5 @@ def test_empty_says_so_in_words():
 
 def test_tooltips_are_escaped():
     p, x, y = scales()
-    out = kit.points(x, y, series(1), kit.ME, tips=['Bob\'s "Grill" <1>'])
+    out = kit.points(x, y, series(1), kit.MEALS, tips=['Bob\'s "Grill" <1>'])
     assert "<1>" not in out and "&lt;1&gt;" in out

@@ -7,6 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>{% block title %}{{ section.title if section else "start" }}{% endblock %} | DineMaster</title>
+<link rel="stylesheet" href="/static/palette.css">
 <link rel="stylesheet" href="{{ static('metro.css') }}">
 {%- if section_css %}
 <link rel="stylesheet" href="{{ static(section_css) }}">
@@ -38,6 +39,7 @@
 <main id="main">
 {% block main %}{% endblock %}
 </main>
+{% include "partials/key.html" %}
 <div id="tip" role="status" hidden></div>
 <script src="{{ static('app.js') }}" defer></script>
 </body>
