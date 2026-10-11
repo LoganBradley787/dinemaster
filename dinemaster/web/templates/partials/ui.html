@@ -1,0 +1,86 @@
+{#- Shared page blocks. In a template: {% import "partials/ui.html" as ui %} (base.html already does). -#}
+
+{#- The verdict: one plain sentence, and an optional quieter one under it. -#}
+{% macro verdict(text, sub=None) %}
+<header class="verdict slide">
+  <h1>{{ text }}</h1>
+  {%- if sub %}<p class="sub">{{ sub }}</p>{% endif %}
+</header>
+{% endmacro %}
+
+{#- Notes: a list of {level: bad|warn|info, text, href?, link?}. -#}
+{% macro notes(items) %}
+{%- if items %}
+<ul class="notes slide" style="--i:1">
+  {%- for n in items %}
+  <li class="{{ n.level }}"><span>{{ n.text }}{% if n.href %} <a href="{{ n.href }}">{{ n.link or "More" }}</a>{% endif %}</span></li>
+  {%- endfor %}
+</ul>
+{%- endif %}
+{% endmacro %}
+
+{#- The number band: 3 to 5 of {value, label, detail?, color?}. -#}
+{% macro band(stats) %}
+<div class="band slide" style="--i:2;--n:{{ stats | length }}">
+  {%- for s in stats %}
+  <p class="stat"{% if s.color %} style="--c:{{ s.color }}"{% endif %}>
+    <span class="figure">{{ s.value }}</span>
+    <span class="label">{{ s.label }}</span>
+    {%- if s.detail %}<span class="detail">{{ s.detail }}</span>{% endif %}
+  </p>
+  {%- endfor %}
+</div>
+{% endmacro %}
+
+{#- A table: t = {columns: [(label, is_number), ...], rows: [[cell, ...], ...]}. -#}
+{% macro table(t, label=None) %}
+<div class="table-wrap">
+<table class="t"{% if label %} aria-label="{{ label }}"{% endif %}>
+  <thead><tr>{% for name, numeric in t.columns %}<th scope="col"{% if numeric %} class="n"{% endif %}>{{ name }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {%- for row in t.rows %}
+    <tr>{% for cell in row %}<td{% if t.columns[loop.index0][1] %} class="n"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+    {%- endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{#- A flat choice between views, as links: options = [{label, href, on}, ...]. -#}
+{% macro seg(options, label) %}
+<nav class="seg" aria-label="{{ label }}">
+  {%- for o in options %}
+  <a href="{{ o.href }}"{% if o.on %} aria-current="true"{% endif %}>{{ o.label }}</a>
+  {%- endfor %}
+</nav>
+{% endmacro %}
+
+{#- A Metro toggle switch (a checkbox). -#}
+{% macro switch(name, label, checked=False, value="1") %}
+<label class="switch"><input type="checkbox" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}><span class="track"></span><span>{{ label }}</span></label>
+{% endmacro %}
+
+{#- An underline-style input with its label above. -#}
+{% macro field(name, label, value="", type="text", hint=None, step=None, min=None) %}
+<label class="field"><span>{{ label }}</span>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}"{% if step %} step="{{ step }}"{% endif %}{% if min is not none %} min="{{ min }}"{% endif %}>
+  {%- if hint %}<span class="hint">{{ hint }}</span>{% endif %}
+</label>
+{% endmacro %}
+
+{#- What every page says when there are no exports yet. -#}
+{% macro no_data(ctx) %}
+<header class="verdict slide">
+  <h1>No dining data yet.</h1>
+  <p class="sub">Put your statement exports (one CSV file per account) into <code>{{ ctx.cfg.raw_dir }}</code>, then reload this page.</p>
+  <p class="sub"><a class="btn" href="{{ ctx.url('/data') }}">Go to data</a></p>
+</header>
+{% endmacro %}
+
+{#- A section that has not been built yet. -#}
+{% macro not_built(name) %}
+<header class="verdict slide">
+  <h1>The {{ name }} page is not built yet.</h1>
+  <p class="sub">The old dashboard still has it. Run <code>uv run streamlit run app.py</code>.</p>
+</header>
+{% endmacro %}

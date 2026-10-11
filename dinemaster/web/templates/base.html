@@ -1,0 +1,44 @@
+{#- The frame every page shares: top bar, pivot, main, tooltip, script. Sections extend this and fill `main`. -#}
+{%- import "partials/ui.html" as ui -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{% block title %}{{ section.title if section else "start" }}{% endblock %} | DineMaster</title>
+<link rel="stylesheet" href="{{ static('metro.css') }}">
+{%- if section_css %}
+<link rel="stylesheet" href="{{ static(section_css) }}">
+{%- endif %}
+{% block head %}{% endblock %}
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="appbar">
+  <div class="appbar-top">
+    <a class="wordmark" href="{{ ctx.url('/') }}">DineMaster</a>
+    <div class="status">
+      {%- if chrome.changed %}
+      <span class="chip changed">{{ chrome.changes | join(", ") }}</span>
+      <a class="reset" href="{{ chrome.reset }}">reset</a>
+      {%- else %}
+      <span class="chip">{{ chrome.as_of }}</span>
+      {%- endif %}
+      <span class="fresh{% if chrome.old %} old{% endif %}">{{ chrome.fresh }}</span>
+    </div>
+  </div>
+  <nav class="pivot" aria-label="Sections">
+    <a href="{{ ctx.url('/') }}"{% if at_start %} aria-current="page"{% endif %}>start</a>
+    {%- for s in sections %}
+    <a href="{{ ctx.url(s.path) }}"{% if section and s.slug == section.slug %} aria-current="page"{% endif %}>{{ s.title }}</a>
+    {%- endfor %}
+  </nav>
+</header>
+<main id="main">
+{% block main %}{% endblock %}
+</main>
+<div id="tip" role="status" hidden></div>
+<script src="{{ static('app.js') }}" defer></script>
+</body>
+</html>

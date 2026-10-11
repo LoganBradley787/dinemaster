@@ -924,28 +924,40 @@ def _face_html(face: Tile, size: str, cls: str = "", style: str = "") -> str:
     return f'<div class="face{cls}"{style_attr}>{"".join(parts)}</div>'
 
 
-def render_html(groups: list[Group], title: str, subtitle: str) -> str:
-    out = [CSS, f'<div class="metro"><div class="top"><h1>{escape(title)}</h1><div class="asof">{escape(subtitle)}</div></div>']
-    out.append('<div class="groups">')
+def groups_html(groups: list[Group], links: dict[str, str] | None = None) -> str:
+    """The tile groups as markup, without the page's CSS or title (the web app brings its own).
+
+    `links` maps a group title to a URL: that group's heading and tiles then link there.
+    """
+    links = links or {}
+    out = ['<div class="groups">']
     i = live = 0
     for g in groups:
-        out.append(f'<section class="group"><h2>{escape(g.title)}</h2><div class="grid">')
+        href = links.get(g.title)
+        tag, link = ("a", f' href="{escape(href)}"') if href else ("div", "")
+        heading = f"<a{link}>{escape(g.title)}</a>" if href else escape(g.title)
+        out.append(f'<section class="group"><h2>{heading}</h2><div class="grid">')
         for t in g.tiles:
             if t.back is None:
-                out.append(f'<div class="tile {t.size}" style="background:{t.color};--i:{i}">{_face_html(t, t.size)}</div>')
+                out.append(f'<{tag}{link} class="tile {t.size}" style="background:{t.color};--i:{i}">{_face_html(t, t.size)}</{tag}>')
             else:
                 period, delay = flip_timing(live)
                 live += 1
                 front = _face_html(t, t.size, " front", f"background:{t.color}")
                 back = _face_html(t.back, t.size, " back", f"background:{t.back.color}")
                 out.append(
-                    f'<div class="tile {t.size} live" style="--i:{i};--t:{period}s;--d:{delay}s">'
-                    f'<div class="flip">{front}{back}</div></div>'
+                    f'<{tag}{link} class="tile {t.size} live" style="--i:{i};--t:{period}s;--d:{delay}s">'
+                    f'<div class="flip">{front}{back}</div></{tag}>'
                 )
             i += 1
         out.append("</div></section>")
-    out.append("</div></div>")
+    out.append("</div>")
     return "".join(out)
+
+
+def render_html(groups: list[Group], title: str, subtitle: str) -> str:
+    top = f'<div class="metro"><div class="top"><h1>{escape(title)}</h1><div class="asof">{escape(subtitle)}</div></div>'
+    return CSS + top + groups_html(groups) + "</div>"
 
 
 def build_page_html(cfg: Config, df: pd.DataFrame, today: date) -> str:
