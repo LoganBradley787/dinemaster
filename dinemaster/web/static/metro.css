@@ -200,6 +200,8 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 #tip b { font-weight: 600; }
 
 @media (prefers-reduced-motion: reduce) { .slide { animation: none; } }
+/* content swapped in by a choice on the page does not slide in again */
+main.swapped .slide { animation: none; }
 @media (max-width: 780px) { .band { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 480px) {
   .band { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 28px 18px; }

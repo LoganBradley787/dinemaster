@@ -82,7 +82,7 @@
   var form = document.querySelector(".week-pick");
   if (!form) return;
   form.setAttribute("data-auto", "");
-  form.querySelector("select").addEventListener("change", function () { form.submit(); });
+  form.querySelector("select").addEventListener("change", function () { form.requestSubmit ? form.requestSubmit() : form.submit(); });
 })();
 </script>
 {%- endif %}

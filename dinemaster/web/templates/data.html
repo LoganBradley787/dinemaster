@@ -222,6 +222,7 @@
   const box = document.getElementById("fetch");
   const list = box.querySelector(".fetch-lines");
   const ask = async () => {
+    if (!box.isConnected) return; // this part of the page was replaced; its newer copy asks instead
     try {
       const s = await (await fetch(box.dataset.status, { cache: "no-store" })).json();
       if (s.state !== "running") return location.reload();

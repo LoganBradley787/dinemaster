@@ -74,14 +74,100 @@
   }
 
   // A range input with class "slider" paints its filled part from --fill.
-  document.querySelectorAll("input.slider").forEach((input) => {
-    const paint = () => {
-      const min = Number(input.min || 0), max = Number(input.max || 100);
-      input.style.setProperty("--fill", `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
-    };
-    input.addEventListener("input", paint);
-    paint();
-  });
+  function paintSliders(root) {
+    root.querySelectorAll("input.slider").forEach((input) => {
+      const paint = () => {
+        const min = Number(input.min || 0), max = Number(input.max || 100);
+        input.style.setProperty("--fill", `${((Number(input.value) - min) / (max - min || 1)) * 100}%`);
+      };
+      input.addEventListener("input", paint);
+      paint();
+    });
+  }
+  paintSliders(document);
+
+  // Choices inside a page (a toggle, a picker, a small GET form) change only the query string.
+  // Fetch that version and swap it in where you are, so the page does not reload and jump to the top.
+  // Without this script the same links and forms still work as ordinary page loads.
+  const main = document.getElementById("main");
+  let swapping = 0;
+
+  function samePage(url) {
+    return url.origin === location.origin && url.pathname === location.pathname && url.search !== location.search;
+  }
+
+  // The control you used, found again in the new page: same id, or the same place among its kind.
+  function locate(el) {
+    if (el.id) return { id: el.id };
+    const kind = el.matches("a") ? "a" : el.tagName.toLowerCase();
+    const group = el.closest(".seg, form, .part, section") || main;
+    const groups = [...main.querySelectorAll(".seg, form, .part, section")];
+    return { kind, group: groups.indexOf(group), index: [...group.querySelectorAll(kind)].indexOf(el) };
+  }
+
+  function find(where) {
+    if (where.id) return document.getElementById(where.id);
+    const group = where.group < 0 ? main : [...main.querySelectorAll(".seg, form, .part, section")][where.group];
+    return group ? [...group.querySelectorAll(where.kind)][where.index] || null : null;
+  }
+
+  async function swapTo(url, from) {
+    const turn = ++swapping;
+    const where = from ? locate(from) : null;
+    const before = from ? from.getBoundingClientRect().top : 0;
+    try {
+      const res = await fetch(url, { headers: { "X-Requested-With": "fetch" } });
+      if (!res.ok) throw new Error(res.status);
+      const doc = new DOMParser().parseFromString(await res.text(), "text/html");
+      const next = doc.getElementById("main");
+      if (!next) throw new Error("no main");
+      if (turn !== swapping) return; // a later choice already won
+      hide();
+      main.classList.add("swapped"); // no entry animation the second time
+      main.replaceChildren(...next.childNodes);
+      for (const part of [".appbar-top", ".pivot"]) {
+        const fresh = doc.querySelector(part), old = document.querySelector(part);
+        if (fresh && old) old.replaceChildren(...fresh.childNodes);
+      }
+      document.title = doc.title;
+      history.replaceState(null, "", url);
+      // Scripts that arrive inside the new content do not run on their own.
+      main.querySelectorAll("script").forEach((old) => {
+        const script = document.createElement("script");
+        script.textContent = old.textContent;
+        old.replaceWith(script);
+      });
+      paintSliders(main);
+      const again = where && find(where);
+      if (again) {
+        scrollBy(0, again.getBoundingClientRect().top - before);
+        if (again.focus) again.focus({ preventScroll: true });
+      }
+    } catch (e) {
+      location.href = url; // fall back to an ordinary page load
+    }
+  }
+
+  if (main && window.fetch && window.DOMParser && history.replaceState) {
+    main.addEventListener("click", (e) => {
+      if (e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const link = e.target.closest ? e.target.closest("a[href]") : null;
+      if (!link || link.target || link.hasAttribute("download")) return;
+      const url = new URL(link.href);
+      if (!samePage(url)) return; // a link that only jumps to a heading has the same query and is left alone
+      e.preventDefault();
+      swapTo(url, link);
+    });
+    main.addEventListener("submit", (e) => {
+      const form = e.target;
+      if (e.defaultPrevented || (form.method || "get").toLowerCase() !== "get") return;
+      const url = new URL(form.action || location.href);
+      url.search = new URLSearchParams(new FormData(form)).toString();
+      if (url.origin !== location.origin || url.pathname !== location.pathname) return;
+      e.preventDefault();
+      swapTo(url, document.activeElement && form.contains(document.activeElement) ? document.activeElement : form);
+    });
+  }
 
   // Keep the current pivot item in view when the pivot scrolls sideways.
   const pivot = document.querySelector(".pivot");
