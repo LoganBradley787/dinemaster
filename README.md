@@ -91,6 +91,10 @@ A browser tab opens at `http://localhost:8160`. It shows a semester of demo data
 
 Download new exports at any time. Put them in `raw-data` with the old files. Then reload the page.
 
+DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of each page shows the last date that your data includes. The data page shows the number of new transactions from each file.
+
+All numbers are correct for the last day that your data includes. DineMaster does not count the days after it as days without meals. If the data is some days old, the daily plan assumes that you ate your usual meals on those days. If the data is more than seven days old, DineMaster tells you, and it does not show a plan for today.
+
 ### UVA only: download with one button
 
 On the data page, the "Get new data" button opens a browser window on the UVA dining site. Log in with NetBadge. DineMaster then downloads the CSV file for each account and puts it in `raw-data`.
@@ -98,10 +102,6 @@ On the data page, the "Get new data" button opens a browser window on the UVA di
 This button works only with the UVA dining site. The address and the account numbers are in the `[export]` section of `config.toml`, and they are mine. If your account numbers are different, change them. If you are not at UVA, delete the `login_url` line. The button then goes away, and you download the files yourself.
 
 The button uses Google Chrome. Your password stays in the browser window. DineMaster does not read it or keep it.
-
-All numbers are correct for the last day that your data includes. DineMaster does not count the days after it as days without meals. If the data is some days old, the daily plan assumes that you ate your usual meals on those days. If the data is more than seven days old, DineMaster tells you, and it does not show a plan for today.
-
-DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of each page shows the last date that your data includes. The data page shows the number of new transactions from each file.
 
 ### Optional: add your calendar
 
