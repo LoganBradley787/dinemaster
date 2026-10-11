@@ -1,13 +1,14 @@
 # DineMaster
 
-A (very unnecessary) dashboard that runs on your own computer and answers one question: **will my dining plan last the semester?**
+A (very unnecessary) dashboard that runs on your own computer and answers two questions: **will my dining plan last the semester, and how much of it will I not use?**
 
 Download your transaction history from the dining account website. Put the files in a folder. DineMaster then shows:
 
 - the meal exchanges and dining dollars that remain
 - if you are ahead of or behind an even pace
 - the number of meals you can eat today
-- the date when each balance will be empty
+- the date when each balance will be empty, if that is a risk
+- the number of meal exchanges that you will not use, and their cost
 
 I made it for my UVA meal plan (meal exchanges and dining dollars), and I tested it only with that plan. You can change the plan size, the dates, and the file format in the settings. Thus it can work for a different school, but I did not try that.
 
@@ -19,16 +20,19 @@ I made it for my UVA meal plan (meal exchanges and dining dollars), and I tested
 
 **Tiles**: a summary in the style of Windows 8. Each tile gives one fact. Some tiles turn over and show a second fact.
 
-**Dashboard**: charts and details in nine tabs.
+The tiles follow the forecast. If you are safe but many meal exchanges will expire, the tiles show the unused exchanges, the weekly rate that uses them all, and the days of the week on which you do not swipe. If a balance can become empty before the end, the tiles show the run-out dates again.
+
+**Dashboard**: charts and details in ten tabs.
 
 | Tab | Contents |
 |---|---|
 | Balances | Your balances through time, compared with an even pace |
 | Forecast | Your usual week, and a projection with a probable range |
-| Daily plan | The number of meals to eat each day for the next two weeks |
+| Daily plan | The exchanges that stay unused at each weekly rate, and the number of meals to eat each day for the next two weeks |
 | Usage | The meals for each day and each week |
 | Habits | The times and places you eat, streaks, late-night purchases, and a weekly summary |
 | Compare | This semester compared with earlier semesters |
+| Plan size | Each plan that your school sells, compared with the number of exchanges that you use |
 | Plan math | The result of each formula, with and without your days away |
 | What-if | The result of a meals-per-day rate that you select |
 | Data | The files that the app imported, and possible problems |
@@ -68,6 +72,9 @@ A browser tab opens at `http://localhost:8501`. It shows a semester of demo data
    - `start` and `end`: your first day and last day on campus this semester
    - `starting_me` and `starting_dd`: the meal exchanges and dining dollars at the start of the plan
    - `meal_price`: the approximate price of a meal when you pay with dining dollars
+   - `dd_rollover`: set this to `true` if dining dollars that you do not spend stay in your account for the next semester
+   - `price` and `dd_in_price` (optional): the price of the plan, and the dining dollars that the price includes. With these values, DineMaster shows the cost of the exchanges that you do not use.
+   - `[[plans]]` (optional): the plans that your school sells. The Plan size tab uses them.
    - `[[away.periods]]`: the days when you are away. Delete this entry if it does not apply.
 2. **Download your transactions.** Go to the dining account website. Open the statement for each account. Export each statement as a CSV file. You can use any date range.
 3. **Put the files in the project.** Make a folder with the name `raw-data` in the project folder. Put the CSV files in it. Do not change the file names. DineMaster uses the names to identify the accounts.
@@ -89,6 +96,8 @@ This button works only with the UVA dining site. The address and the account num
 
 The button uses Google Chrome. Your password stays in the browser window. DineMaster does not read it or keep it.
 
+All numbers are correct for the last day that your data includes. DineMaster does not count the days after it as days without meals. If the data is some days old, the daily plan assumes that you ate your usual meals on those days. If the data is more than seven days old, DineMaster tells you, and it does not show a plan for today.
+
 DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of the dashboard shows the last date that your data includes. The Data tab shows the number of new transactions from each file.
 
 ### Optional: add your calendar
@@ -105,7 +114,7 @@ DineMaster runs on your computer and sends no data to other computers. It connec
 
 All settings are in `config.toml`. Each line has a comment. On the Configuration page, you can try different values, and the file does not change. You can also set an "as of" date to see a past day.
 
-If your school uses a different export format, change the `[files]` section. It sets the column names and the file names. The `[classification]` section sets the difference between a snack and a meal.
+If your school uses a different export format, change the `[files]` section. It sets the column names and the file names. The `[classification]` section sets the difference between a snack and a meal. Its `adjustment_patterns` list identifies the changes that the dining office makes to a balance, which are not purchases. The `[tiles]` section can show or hide the run-out tiles at all times.
 
 ## For developers
 

@@ -36,6 +36,8 @@ starting_dd = 360.0
 meal_price = 15.0
 dd_rollover = false
 dd_leftover_flag = 15.0
+price = 2000.0
+dd_in_price = 300.0
 
 [plan.dd_rounding]
 mode = "floor"
@@ -84,6 +86,23 @@ marker_patterns = ["(?i)reading day", "(?i)exam"]
 name = "Last semester"
 start = {prev_start}
 end = {prev_end}
+
+[[plans]]
+name = "Unlimited"
+dining_dollars = 150.0
+price = 3200.0
+
+[[plans]]
+name = "Block 160"
+exchanges = 160
+dining_dollars = 300.0
+price = 2000.0
+
+[[plans]]
+name = "Block 100"
+exchanges = 100
+dining_dollars = 300.0
+price = 1500.0
 """
 
 

@@ -13,14 +13,16 @@ Typical call (what the dashboard and tiles do):
     line = today_line(plan, date.today())              # "2 meals today, 1 tomorrow"
     advice = spend_down(cfg, left.me_left, left.dd_left, profile, start).sentence
 
-Three public pieces
+Four public pieces
 -------------------
 * `daily_budget` places every remaining meal on a specific day. Days of the week that have
   historically been heavier get more (weights = the profile's `meals_rate`), away days get none,
   and no day gets more than `cfg.max_meals_per_day`.
 * `today_line` turns that plan into one short line about today and tomorrow.
 * `spend_down` answers "how fast should I use each pot so both hit zero on the last day?",
-  first setting aside the dining dollars that snacks are expected to take.
+  first setting aside the dining dollars that snacks are expected to take. Dining dollars that
+  roll over (`cfg.dd_rollover`) are left alone: exchanges expire, so they go first.
+* `rate_ladder` answers "how many exchanges go unused at each weekly rate?".
 
 Day rules shared by all three: the plan covers `start .. cfg.semester_end` inclusive. A day counts
 as *away* only when `cfg.exclude_away` is on and `cfg.is_away(day)`; with the toggle off every day
@@ -160,7 +162,8 @@ def daily_budget(cfg: Config, me_left: float, dd_left: float, profile: pd.DataFr
         start: first day to plan — the day after the last observed day (`O + 1`). A `start`
             before the semester is moved up to `cfg.semester_start`.
         include_dd: True plans exchanges plus the meals dining dollars can buy
-            (`cfg.round_meals(dd_left / cfg.meal_price)`); False plans exchanges only.
+            (`cfg.round_meals(dd_left / cfg.meal_price)`); False plans exchanges only. Callers
+            pass `not cfg.dd_rollover` by default: dollars that carry over need no using up.
 
     Returns:
         DataFrame indexed by `datetime.date` (index name "date"), one row per day
@@ -424,6 +427,11 @@ def _sentence(cfg: Config, me_left: float, dd_left: float, snack_reserve: float,
             text += f" About {_about_dollars(snack_reserve)} is set aside for snacks."
         return text
 
+    if cfg.dd_rollover and dd_left > 0:
+        if exchanges:
+            return f"Exchanges expire and dining dollars carry over, so swipe first — use {exchanges}{span} to reach zero on {day}."
+        return "No exchanges left — your dining dollars carry over, so there is nothing to use up."
+
     # No dining-dollar meals to plan: say why, then fall back to exchanges alone.
     if dd_left <= 0:
         if exchanges:
@@ -476,6 +484,9 @@ def spend_down(cfg: Config, me_left: float, dd_left: float, profile: pd.DataFram
       reach zero on Dec 18.", or "No exchanges left, and <the dining-dollar reason>." when
       there are no dining-dollar meals either; "No exchanges or dining dollars left." when
       both pots are empty.
+    * dining dollars roll over (`cfg.dd_rollover`) — no dining-dollar meals are planned
+      (`dd_meals` is 0): "Exchanges expire and dining dollars carry over, so swipe first — use
+      about 11 exchanges a week to reach zero on Dec 18."
     * nothing to plan (`reason` set) — "The semester is over — nothing left to spread out."
     """
     days, away = _remaining_days(cfg, start)
@@ -497,7 +508,7 @@ def spend_down(cfg: Config, me_left: float, dd_left: float, profile: pd.DataFram
     snack_rates = _weekday_values(profile, "dd_snack_rate")
     snack_reserve = float(sum(snack_rates[d.weekday()] for d in usable)) if snack_rates is not None else 0.0
     dd_for_meals = max(0.0, dd - snack_reserve)
-    dd_meals = _whole(dd_for_meals / cfg.meal_price) if cfg.meal_price > 0 else 0
+    dd_meals = _whole(dd_for_meals / cfg.meal_price) if cfg.meal_price > 0 and not cfg.dd_rollover else 0
     dd_unallocated = max(0.0, dd_for_meals - dd_meals * cfg.meal_price)
 
     return SpendDown(
@@ -514,3 +525,83 @@ def spend_down(cfg: Config, me_left: float, dd_left: float, profile: pd.DataFram
         sentence=_sentence(cfg, me, dd, snack_reserve, dd_for_meals, dd_meals, usable_days, usable[-1]),
         reason=None,
     )
+
+
+# ---------------------------------------------------------------------------
+# rate ladder
+# ---------------------------------------------------------------------------
+
+#: Most rungs `rate_ladder` returns.
+MAX_RUNGS = 4
+
+
+@dataclass(frozen=True)
+class Ladder:
+    """How many exchanges go unused at each weekly rate, from the usual rate up to using them all.
+
+    Fields:
+        left: exchanges left (whole).
+        usable_days, weeks: days left to use them on (away days left out) and that in weeks.
+        usual_per_week: the rate the forecast expects — what happens if nothing changes.
+        needed_per_week: `left / weeks`, the rate that uses every exchange.
+        rungs: `(exchanges a week, exchanges unused at semester end)` for whole weekly rates
+            from the usual rate (rounded) up to the first that leaves none; at most
+            `MAX_RUNGS`, the last always being the one that leaves none.
+        per_extra: exchanges saved by one more swipe every week (`weeks`, rounded).
+        reason: set, with empty `rungs`, when there is nothing to show (no days left, no
+            exchanges left, or the usual rate already uses them all).
+    """
+
+    left: int
+    usable_days: int
+    weeks: float
+    usual_per_week: float
+    needed_per_week: float
+    rungs: tuple[tuple[int, int], ...]
+    per_extra: int
+    reason: str | None
+
+
+def rate_ladder(cfg: Config, me_left: float, expected_unused: float, start: date) -> Ladder:
+    """Unused exchanges at each weekly rate between the usual one and the one that uses them all.
+
+    Args:
+        me_left: exchanges left at `start`.
+        expected_unused: exchanges the forecast expects to be left at semester end.
+        start: first day still to come (`O + 1`).
+    """
+    days, away = _remaining_days(cfg, start)
+    usable_days = int((~away).sum())
+    left = _whole(me_left)
+    weeks = usable_days / 7
+    if usable_days == 0 or left == 0:
+        why = "no exchanges left" if usable_days else "no days left"
+        return Ladder(left, usable_days, weeks, 0.0, 0.0, (), 0, why)
+
+    usual = float(max(0.0, left - max(0.0, float(expected_unused))) / weeks)
+    needed = left / weeks
+    if needed - usual < 0.05:
+        return Ladder(left, usable_days, weeks, usual, needed, (), round(weeks), "your usual rate already uses them all")
+
+    top = math.ceil(needed - _EPS)
+    rates = list(range(max(1, min(top - 1, math.floor(usual + 0.5))), top + 1))
+    if len(rates) > MAX_RUNGS:  # keep the usual rate and the top, thin out the middle
+        picks = sorted({round(i * (len(rates) - 1) / (MAX_RUNGS - 1)) for i in range(MAX_RUNGS)})
+        rates = [rates[i] for i in picks]
+    rungs = tuple((rate, max(0, round(left - rate * weeks))) for rate in rates)
+    return Ladder(left, usable_days, weeks, usual, needed, rungs, round(weeks), None)
+
+
+def ladder_lines(ladder: Ladder) -> list[str]:
+    """The ladder as short sentences: the gap, each rung, and what one more swipe a week is worth."""
+    if ladder.reason is not None:
+        return []
+    lines = [f"You use about {_number(ladder.usual_per_week)} a week. All {ladder.left} takes {_number(ladder.needed_per_week)}."]
+    steps = []
+    for rate, unused in ladder.rungs:
+        what = f"leaves {unused}" if unused else "uses them all"
+        steps.append(f"{rate} {what}" if steps else f"{rate} a week {what}")
+    lines.append(", ".join(steps) + ".")
+    if ladder.per_extra >= 2:
+        lines.append(f"One more swipe a week saves {ladder.per_extra} exchanges.")
+    return lines

@@ -138,14 +138,8 @@ def _dd_net_rows(df: pd.DataFrame | None, start: date, end: date) -> pd.DataFram
 
 
 def day_rollover_hour(cfg: Config) -> int:
-    """Hour at which a new "dining day" starts, used so late nights are not split at midnight.
-
-    Equal to `cfg.habits.late_night_end` when the late-night window ends in the morning (the
-    default 4 means 00:00-03:59 belongs to the previous evening); 0 (plain calendar days)
-    when the window ends after noon.
-    """
-    end = int(cfg.habits.late_night_end) % 24
-    return end if end <= 12 else 0
+    """Hour at which a new "dining day" starts (`Config.day_rollover_hour`)."""
+    return cfg.day_rollover_hour
 
 
 def late_hours(start: int, end: int) -> list[int]:
@@ -182,8 +176,8 @@ def hour_weekday_matrix(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
         columns  ints 0..23 (hour of day the meal was bought), name "hour".
         values   meals = ME swipes net of reversals + DD meal purchases. A reversed swipe is
                  removed from the cell of the swipe itself, so cells are never negative.
-    Weekday and hour come from the transaction's own clock time: a 00:10 purchase after a
-    Saturday night out is in the "Sun" row, hour 0.
+    The hour is the transaction's own clock time; the weekday is its dining day, so a 00:10
+    purchase after a Saturday night out is in the "Sat" row, hour 0.
     """
     matrix = pd.DataFrame(
         0, index=pd.Index(WEEKDAYS, name="weekday"), columns=pd.Index(range(24), name="hour"), dtype=int
@@ -192,7 +186,8 @@ def hour_weekday_matrix(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     meals = visits[visits["meals"] > 0]
     if meals.empty:
         return matrix
-    counts = meals.groupby([meals["timestamp"].dt.weekday, meals["timestamp"].dt.hour])["meals"].sum()
+    weekday = meals["date"].map(lambda d: d.weekday())
+    counts = meals.groupby([weekday, meals["timestamp"].dt.hour])["meals"].sum()
     for (weekday, hour), value in counts.items():
         matrix.iloc[int(weekday), int(hour)] = int(round(value))
     return matrix
@@ -428,7 +423,7 @@ def place_stats(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
                                      before `day_rollover_hour(cfg)` count as the end of the
                                      previous evening, so 11 PM and 1 AM give midnight, not noon.
         favorite_weekday      str    `WEEKDAYS` label of the weekday with the most visits
-                                     (by clock date; ties go to the earliest weekday).
+                                     (by dining day; ties go to the earliest weekday).
         favorite_weekday_num  int    the same weekday as 0..6 (Monday=0).
     """
     cutoff, o = cfg.data_cutoff, observed_through(cfg, df)
@@ -445,7 +440,7 @@ def place_stats(df: pd.DataFrame, cfg: Config) -> pd.DataFrame:
     for place, group in visits.groupby("place"):
         clock = group["timestamp"].dt.hour + group["timestamp"].dt.minute / 60.0
         shifted = clock.where(clock >= rollover, clock + 24.0)
-        by_weekday = group.groupby(group["timestamp"].dt.weekday)["n"].sum()
+        by_weekday = group.groupby(group["date"].map(lambda d: d.weekday()))["n"].sum()
         favorite = int(min(by_weekday.index, key=lambda w: (-by_weekday[w], w)))
         swipes = int(round(group.loc[group["pot"] == "ME", "n"].sum()))
         dd_meals = int((group["dd_class"] == "meal").sum())
