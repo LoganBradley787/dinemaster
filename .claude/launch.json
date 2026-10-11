@@ -4,8 +4,14 @@
     {
       "name": "dinemaster",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "streamlit", "run", "app.py", "--server.headless", "true", "--server.port", "8501"],
-      "port": 8501
+      "runtimeArgs": [
+        "run",
+        "python",
+        "-m",
+        "dinemaster",
+        "--no-open"
+      ],
+      "port": 8160
     }
   ]
 }

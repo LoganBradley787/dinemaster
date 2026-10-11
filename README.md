@@ -12,41 +12,42 @@ Download your transaction history from the dining account website. Put the files
 
 I made it for my UVA meal plan (meal exchanges and dining dollars), and I tested it only with that plan. You can change the plan size, the dates, and the file format in the settings. Thus it can work for a different school, but I did not try that.
 
-![Tiles page](docs/screenshots/tiles.png)
+![Start screen](docs/screenshots/start.png)
 
 *The screenshots show demo data that is not real.*
 
 ## What you get
 
-**Tiles**: a summary in the style of Windows 8. Each tile gives one fact. Some tiles turn over and show a second fact.
+**Start screen**: the home page. It is a summary in the style of Windows 8. Each tile gives one fact. Some tiles turn over and show a second fact. Click a tile to open the section that has the details.
 
 The tiles follow the forecast. If you are safe but many meal exchanges will expire, the tiles show the unused exchanges, the weekly rate that uses them all, and the days of the week on which you do not swipe. If a balance can become empty before the end, the tiles show the run-out dates again.
 
-**Dashboard**: charts and details in ten tabs.
+**Sections**: charts and details on seven pages. The names at the top of each page open them.
 
-| Tab | Contents |
+| Section | Contents |
 |---|---|
-| Balances | Your balances through time, compared with an even pace |
-| Forecast | Your usual week, and a projection with a probable range |
-| Daily plan | The exchanges that stay unused at each weekly rate, and the number of meals to eat each day for the next two weeks |
-| Usage | The meals for each day and each week |
-| Habits | The times and places you eat, streaks, late-night purchases, and a weekly summary |
-| Compare | This semester compared with earlier semesters |
-| Plan size | Each plan that your school sells, compared with the number of exchanges that you use |
-| Plan math | The result of each formula, with and without your days away |
-| What-if | The result of a meals-per-day rate that you select |
-| Data | The files that the app imported, and possible problems |
+| now | Your balances through time compared with an even pace, the meals for each day and each week, and the places you eat |
+| forecast | A projection of each balance with a probable range, and your usual week |
+| plan | The number of meals to eat each day for the next two weeks, the exchanges that stay unused at each weekly rate, the result of a meals-per-day rate that you select, and each plan that your school sells |
+| habits | The times and places you eat, streaks, late-night purchases, and a weekly summary |
+| compare | This semester compared with earlier semesters |
+| math | The result of each formula, with and without your days away |
+| data | The files that the app imported, possible problems, your settings, and your calendar |
 
-![Dashboard](docs/screenshots/dashboard.png)
+![The now section](docs/screenshots/now.png)
+
+**Themes**: the app has a dark theme and a light theme. The switch is at the top right of each page. The app keeps your selection.
+
+**Color key**: each color has one meaning. The key at the bottom of each page shows the meaning of each color.
 
 <details>
 <summary>More screenshots</summary>
 
-**Forecast**
+**Forecast, in the light theme**
 ![Forecast](docs/screenshots/forecast.png)
 
-**Daily plan**
-![Daily plan](docs/screenshots/daily-plan.png)
+**Plan**
+![Plan](docs/screenshots/plan.png)
 
 **Habits**
 ![Habits](docs/screenshots/habits.png)
@@ -61,10 +62,10 @@ Install [uv](https://docs.astral.sh/uv/getting-started/installation/). This tool
 git clone https://github.com/LoganBradley787/dinemaster.git
 cd dinemaster
 uv run python demo/make_demo.py
-DINEMASTER_CONFIG=demo/config.toml uv run streamlit run app.py
+DINEMASTER_CONFIG=demo/config.toml uv run python -m dinemaster
 ```
 
-A browser tab opens at `http://localhost:8501`. It shows a semester of demo data. To stop the app, press `Ctrl+C` in the terminal.
+A browser tab opens at `http://localhost:8160`. It shows a semester of demo data. To stop the app, press `Ctrl+C` in the terminal.
 
 ## Use your own data
 
@@ -74,15 +75,17 @@ A browser tab opens at `http://localhost:8501`. It shows a semester of demo data
    - `meal_price`: the approximate price of a meal when you pay with dining dollars
    - `dd_rollover`: set this to `true` if dining dollars that you do not spend stay in your account for the next semester
    - `price` and `dd_in_price` (optional): the price of the plan, and the dining dollars that the price includes. With these values, DineMaster shows the cost of the exchanges that you do not use.
-   - `[[plans]]` (optional): the plans that your school sells. The Plan size tab uses them.
+   - `[[plans]]` (optional): the plans that your school sells. The plan page uses them.
    - `[[away.periods]]`: the days when you are away. Delete this entry if it does not apply.
 2. **Download your transactions.** Go to the dining account website. Open the statement for each account. Export each statement as a CSV file. You can use any date range.
 3. **Put the files in the project.** Make a folder with the name `raw-data` in the project folder. Put the CSV files in it. Do not change the file names. DineMaster uses the names to identify the accounts.
 4. **Start the app.**
 
    ```bash
-   uv run streamlit run app.py
+   uv run python -m dinemaster
    ```
+
+   A browser tab opens at `http://localhost:8160`.
 
 ### Update your data
 
@@ -90,7 +93,7 @@ Download new exports at any time. Put them in `raw-data` with the old files. The
 
 ### UVA only: download with one button
 
-On the Configuration page, the "Get new data" button opens a browser window on the UVA dining site. Log in with NetBadge. DineMaster then downloads the CSV file for each account and puts it in `raw-data`.
+On the data page, the "Get new data" button opens a browser window on the UVA dining site. Log in with NetBadge. DineMaster then downloads the CSV file for each account and puts it in `raw-data`.
 
 This button works only with the UVA dining site. The address and the account numbers are in the `[export]` section of `config.toml`, and they are mine. If your account numbers are different, change them. If you are not at UVA, delete the `login_url` line. The button then goes away, and you download the files yourself.
 
@@ -98,21 +101,25 @@ The button uses Google Chrome. Your password stays in the browser window. DineMa
 
 All numbers are correct for the last day that your data includes. DineMaster does not count the days after it as days without meals. If the data is some days old, the daily plan assumes that you ate your usual meals on those days. If the data is more than seven days old, DineMaster tells you, and it does not show a plan for today.
 
-DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of the dashboard shows the last date that your data includes. The Data tab shows the number of new transactions from each file.
+DineMaster counts each transaction only one time, even if it is in more than one file. Old data stays in the app. The top of each page shows the last date that your data includes. The data page shows the number of new transactions from each file.
 
 ### Optional: add your calendar
 
 Make a folder with the name `calendar`. Put `.ics` calendar files in it. Most calendar apps can export this file type.
 
-DineMaster uses events with names such as "break", "recess", "home", or "trip" as days away. It shows reading days and exams as marks on the charts. You can set each event to off on the Configuration page.
+DineMaster uses events with names such as "break", "recess", "home", or "trip" as days away. It shows reading days and exams as marks on the charts. You can set each event to off on the data page.
 
 ## Your data stays on your computer
 
-DineMaster runs on your computer and sends no data to other computers. It connects to the dining site only when you click "Get new data". It connects to a calendar feed only if you put the address of the feed in `config.toml`. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
+DineMaster runs on your computer and sends no data to other computers. The app listens only on your own computer. Thus other computers on your network cannot open it. It connects to the dining site only when you click "Get new data". It connects to a calendar feed only if you put the address of the feed in `config.toml`. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
 
 ## Settings
 
-All settings are in `config.toml`. Each line has a comment. On the Configuration page, you can try different values, and the file does not change. You can also set an "as of" date to see a past day.
+The default settings are in `config.toml`. Each line has a comment.
+
+You can also change the plan, the dates, and your days away on the data page. The data page saves your changes to a local file, `data/settings.json`. It does not change `config.toml`. Git ignores the local file. To go back to the values in `config.toml`, click "Reset to config.toml" on the data page.
+
+On the data page, you can also set an "as of" date to see a past day.
 
 If your school uses a different export format, change the `[files]` section. It sets the column names and the file names. The `[classification]` section sets the difference between a snack and a meal. Its `adjustment_patterns` list identifies the changes that the dining office makes to a balance, which are not purchases. The `[tiles]` section can show or hide the run-out tiles at all times.
 
@@ -127,7 +134,9 @@ The code is in `dinemaster/`:
 - `ingest.py` merges the exports into one ledger.
 - `metrics.py` calculates the pace.
 - `forecast.py` and `budget.py` calculate the projections and the daily plan.
-- `tiles.py` makes the Tiles page.
+- `tiles.py` makes the tiles of the Start screen.
+- `palette.py` holds every color and its meaning.
+- `web/` holds the pages, the templates, and the chart kit. The chart kit draws each chart as SVG.
 
 ## License
 

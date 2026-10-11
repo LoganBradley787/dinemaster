@@ -1,4 +1,4 @@
-"""Tests for dinemaster.compare / compare_charts — written before the implementation.
+"""Tests for dinemaster.compare — written before the implementation.
 
 Synthetic, hand-built ledgers only. The config is the project one with every field these
 functions read overridden, and `raw_dir` pointed at an empty temp folder so the observed-through
@@ -11,12 +11,9 @@ import dataclasses
 from datetime import date, datetime
 
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 
 from dinemaster import compare as c
-from dinemaster import compare_charts as cc
-from dinemaster.charts import COLORS
 from dinemaster.config import AwayPeriod, SemesterDef, load_config
 
 COLUMNS = ["account", "pot", "timestamp", "date", "description", "amount", "balance", "kind", "dd_class"]
@@ -285,48 +282,3 @@ def test_weekly_usage_matches_summary_totals(cfg):
         for pot, usage in (("ME", s.me), ("DD", s.dd)):
             if usage is not None:
                 assert totals[(s.name, pot)] == pytest.approx(usage.used)
-
-
-# ---------------------------------------------------------------------------
-# charts
-# ---------------------------------------------------------------------------
-
-
-def test_weekly_overlay_chart_draws_one_line_per_semester(cfg):
-    weekly = c.weekly_usage(make_df(spring_rows() + current_rows()), cfg)
-    fig = cc.weekly_overlay_chart(weekly, "DD")
-    assert isinstance(fig, go.Figure)
-    assert [t.name for t in fig.data] == ["Spring 2026", "Fall 2026"]
-    current = fig.data[-1]
-    assert current.line.color == COLORS["dd"]
-    assert fig.data[0].line.color != COLORS["dd"]
-    assert list(fig.data[0].x) == [10, 11, 12, 13, 14, 15, 16]
-
-    me = cc.weekly_overlay_chart(weekly, "ME")
-    assert [t.name for t in me.data] == ["Fall 2026"]
-    assert me.data[0].line.color == COLORS["me"]
-
-
-def test_weekly_overlay_chart_handles_no_data(cfg):
-    fig = cc.weekly_overlay_chart(c.weekly_usage(make_df([]), cfg), "ME")
-    assert isinstance(fig, go.Figure) and len(fig.data) == 0
-    assert "no data" in fig.layout.title.text
-
-
-def test_per_day_comparison_chart_has_a_bar_per_semester_and_pot(cfg):
-    summaries = c.semester_summaries(make_df(spring_rows() + current_rows()), cfg)
-    fig = cc.per_day_comparison_chart(summaries)
-    assert isinstance(fig, go.Figure)
-    me, dd = fig.data
-    assert (me.marker.color, dd.marker.color) == (COLORS["me"], COLORS["dd"])
-    names = ["Spring 2026", "Fall 2025", "Fall 2026"]
-    assert list(me.x) == names and list(dd.x) == names
-    assert list(me.y) == [None, None, pytest.approx(4 / 14)]
-    assert list(dd.y) == [pytest.approx(0.75), None, pytest.approx(1.0)]
-    assert me.xaxis != dd.xaxis  # two panels, never two scales on one axis
-
-
-def test_per_day_comparison_chart_handles_no_summaries():
-    fig = cc.per_day_comparison_chart([])
-    assert isinstance(fig, go.Figure)
-    assert "no data" in fig.layout.title.text

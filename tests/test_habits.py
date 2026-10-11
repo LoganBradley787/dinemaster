@@ -1,4 +1,4 @@
-"""Tests for dinemaster.habits and dinemaster.habits_charts (written before the implementation).
+"""Tests for dinemaster.habits (written before the implementation).
 
 Every DataFrame is synthetic and hand-built with the ingest "Public API" columns. The observed
 window is controlled through the real freshness path: `cfg_at` points `raw_dir` at a temp folder
@@ -14,11 +14,9 @@ from dataclasses import replace
 from datetime import date, datetime
 
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 
 from dinemaster import habits as h
-from dinemaster import habits_charts as hc
 from dinemaster.config import AwayPeriod, HabitsConfig, load_config
 
 COLUMNS = ["account", "pot", "timestamp", "date", "description", "amount", "balance", "kind", "dd_class"]
@@ -482,46 +480,3 @@ def test_format_hour():
     assert h.format_hour(23.75) == "11:45 PM"
     assert h.format_hour(9) == "9 AM"
     assert h.format_hour(None) == ""
-
-
-# ---------------------------------------------------------------------------
-# charts
-# ---------------------------------------------------------------------------
-
-
-def test_heatmap_chart(cfg_at):
-    df = make_df([swipe("2026-08-31 12:15"), swipe("2026-09-07 12:40"), dd("2026-09-01 18:05", LAUNCH, 13.5, "meal")])
-    fig = hc.heatmap_chart(h.hour_weekday_matrix(df, cfg_at(date(2026, 9, 8))))
-    assert isinstance(fig, go.Figure)
-    heat = fig.data[0]
-    assert isinstance(heat, go.Heatmap)
-    assert list(heat.y) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    assert len(heat.x) == 24
-    assert heat.z[0][12] == 2 and heat.z[1][18] == 1
-    assert fig.layout.yaxis.autorange == "reversed"            # Monday on top
-
-
-def test_heatmap_chart_empty(cfg_at):
-    for matrix in (h.hour_weekday_matrix(make_df([]), cfg_at(date(2026, 9, 8))), pd.DataFrame(), None):
-        fig = hc.heatmap_chart(matrix)
-        assert isinstance(fig, go.Figure)
-        assert "no data" in fig.layout.title.text
-
-
-def test_place_chart(cfg_at):
-    df = make_df([
-        swipe("2026-08-31 12:00", DEN), swipe("2026-09-02 18:00", DEN),
-        dd("2026-09-01 13:00", LAUNCH, 13.5, "meal"),
-    ])
-    fig = hc.place_chart(h.place_stats(df, cfg_at(date(2026, 9, 8))))
-    assert isinstance(fig, go.Figure)
-    assert [t.name for t in fig.data] == ["ME swipes", "DD purchases"]
-    assert all(t.orientation == "h" for t in fig.data)
-    assert fig.layout.barmode == "stack"
-    assert list(fig.data[0].y)[-1] == DEN                      # busiest place is drawn at the top
-
-
-def test_place_chart_empty(cfg_at):
-    for stats in (h.place_stats(make_df([]), cfg_at(date(2026, 9, 8))), None):
-        fig = hc.place_chart(stats)
-        assert isinstance(fig, go.Figure) and "no data" in fig.layout.title.text

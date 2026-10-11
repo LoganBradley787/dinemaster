@@ -1,7 +1,7 @@
 """Eating habits: when, where and how regularly meals happen (spec "8. Habits").
 
 Pure functions over the ingest DataFrame (`dinemaster.ingest.load_transactions`) and a `Config`.
-No Streamlit, no file writes. Figure builders for these results live in `habits_charts.py`.
+No page code, no file writes. Charts for these results live in `dinemaster/web/charts/habits.py`.
 
 Vocabulary
     S, E   semester start / end (`cfg.semester_start`, `cfg.semester_end`).

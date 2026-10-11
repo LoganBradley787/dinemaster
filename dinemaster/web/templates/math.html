@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{#- One result: the value, a word under it, and the arithmetic that gave it. -#}
+{% macro result(c, on, span=1) %}
+<td class="n{% if on %} on{% endif %}{% if c.words %} words{% endif %}"{% if span > 1 %} colspan="{{ span }}"{% endif %}>
+  <span class="v">{{ c.text | dates }}</span>
+  {%- if c.sub %}<span class="unit">{{ c.sub | dates }}</span>{% endif %}
+  {%- if working and c.calc %}<span class="calc">{{ c.calc }}</span>{% endif %}
+</td>
+{% endmacro %}
+
+{% block main %}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{{ ui.band(band) }}
+
+<div class="choices slide" style="--i:3">
+  {{ ui.choice("Days away", away_options) }}
+  {{ ui.choice("How each figure is worked out", working_options) }}
+</div>
+
+<section class="part sheet slide" style="--i:4" id="meals-a-day">
+  <div class="about">
+    <h2>meals a day</h2>
+    <p class="lead">Your own pace beside the paces the formulas below work out.</p>
+    {%- if pace_line %}<p class="fine">{{ pace_line }}</p>{% endif %}
+  </div>
+  {{ pace_chart }}
+</section>
+
+{%- for b in blocks %}
+<section class="part sheet{% if loop.index < 3 %} slide{% endif %}"{% if loop.index < 3 %} style="--i:{{ 4 + loop.index }}"{% endif %} id="{{ b.id }}">
+  <div class="about">
+    <h2>{{ b.title }}</h2>
+    <p class="lead">{{ b.answers | dates }}</p>
+    {%- for line in b.fine %}
+    <p class="fine">{{ line | dates }}</p>
+    {%- endfor %}
+  </div>
+  <div class="table-wrap">
+  <table class="t sums" aria-label="{{ b.title | capitalize }}, counting every day and leaving out days away">
+    <colgroup><col><col class="{{ 'on' if columns[0].on }}"><col class="{{ 'on' if columns[1].on }}"></colgroup>
+    <thead>
+      <tr>
+        <td></td>
+        {%- for c in columns %}
+        <th scope="col" class="n{% if c.on %} on{% endif %}">{{ c.label }}{% if c.on %}<span class="tag">in use</span>{% endif %}</th>
+        {%- endfor %}
+      </tr>
+    </thead>
+    {%- for g in b.groups %}
+    <tbody>
+      <tr class="group">
+        <th scope="rowgroup">{% if g.kind %}<i class="chip" style="background:var(--{{ (g.kind | meaning).slug }})"></i>{% endif %}{{ g.title | dates }}</th>
+        {%- for c in columns %}<td class="{{ 'on' if c.on }}"></td>{% endfor %}
+      </tr>
+      {%- for r in g.rows %}
+      <tr>
+        <th scope="row">{{ r.label }}{% if working %}<span class="how">{{ r.how | dates }}</span>{% endif %}</th>
+        {%- if r.both %}
+        {{ result(r.both, False, 2) }}
+        {%- else %}
+        {%- for c in r.cells %}
+        {{ result(c, columns[loop.index0].on) }}
+        {%- endfor %}
+        {%- endif %}
+      </tr>
+      {%- endfor %}
+    </tbody>
+    {%- endfor %}
+  </table>
+  </div>
+</section>
+{%- endfor %}
+{%- endif %}
+{% endblock %}

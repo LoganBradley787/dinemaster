@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+{% block main %}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{{ ui.band(band) }}
+
+<section class="part slide" style="--i:3" id="meal-exchanges">
+  <h2>meal exchanges</h2>
+  <p class="lead">{{ me.lead }}</p>
+  {{ me.chart }}
+</section>
+
+<div class="two">
+  <section class="part slide" style="--i:4" id="dining-dollars">
+    <div class="part-head">
+      <h2>dining dollars</h2>
+      {{ ui.seg(dd.units, "Show dining dollars as") }}
+    </div>
+    <p class="lead">{{ dd.lead }}{% if dd.in_meals %} Shown as meals at {{ cfg.meal_price | cents }} each.{% endif %}</p>
+    {{ dd.chart }}
+  </section>
+  {%- if pooled %}
+  <section class="part slide" style="--i:4" id="both">
+    <h2>both together</h2>
+    <p class="lead">Exchanges plus dining dollars counted as meals at {{ cfg.meal_price | cents }} each.</p>
+    {{ pooled }}
+  </section>
+  {%- endif %}
+</div>
+
+<section class="part slide" style="--i:5" id="day-by-day">
+  <h2>day by day</h2>
+  {%- if pace_line %}<p class="lead">{{ pace_line }}</p>{% endif %}
+  {{ daily_chart }}
+</section>
+
+<section class="part slide" style="--i:6" id="week-by-week">
+  <h2>week by week</h2>
+  {%- if mix_line %}<p class="lead">{{ mix_line }}</p>{% endif %}
+  <div class="two">
+    {{ mix_chart }}
+    {{ ui.table(weeks, "Meals by week") }}
+  </div>
+</section>
+
+<section class="part slide" style="--i:7" id="places">
+  <h2>places</h2>
+  {%- if dd_split %}<p class="lead">Of your dining dollars, {{ dd_split }}</p>{% endif %}
+  <div class="two">
+    <div>
+      <h3>Exchange swipes</h3>
+      {{ me_places }}
+    </div>
+    <div>
+      <h3>Dining dollars</h3>
+      {{ dd_places }}
+    </div>
+  </div>
+  {{ ui.table(places, "Visits and spending by place") }}
+</section>
+{%- endif %}
+{% endblock %}

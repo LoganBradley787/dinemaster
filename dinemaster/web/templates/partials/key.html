@@ -1,0 +1,14 @@
+{#- The key: a square of each colour and what it stands for. base.html puts it at the bottom of every page.
+    `palette_key` is dinemaster.palette.KEY, so the key can only list the meanings that exist. -#}
+<footer class="key" aria-label="What the colors mean">
+  {%- for title, meanings in palette_key %}
+  <div class="key-group">
+    <span class="key-title">{{ title }}</span>
+    <ul>
+      {%- for m in meanings %}
+      <li><i style="--c:{{ m | fill }}" data-kind="{{ m.slug }}" data-sign="{{ m.sign }}"></i>{{ m.label }}</li>
+      {%- endfor %}
+    </ul>
+  </div>
+  {%- endfor %}
+</footer>

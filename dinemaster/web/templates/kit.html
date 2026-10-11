@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}kit{% endblock %}
+{% block main %}
+{{ ui.verdict("Every page starts with one plain sentence.", "A quieter second sentence can carry the figures behind it.") }}
+{{ ui.notes(notes) }}
+{{ ui.band(band) }}
+
+{%- for title, chart in charts %}
+<section class="part slide" style="--i:{{ loop.index + 2 }}">
+  <h2>{{ title }}</h2>
+  <p class="lead">One sentence that says how to read the chart.</p>
+  {{ chart }}
+</section>
+{%- endfor %}
+
+<section class="part">
+  <div class="part-head"><h2>a table</h2>{{ ui.seg(seg, "Units") }}</div>
+  {{ ui.table(table, "Example table") }}
+  <p class="fine">Fine print sits under the thing it explains.</p>
+</section>
+
+<section class="part">
+  <h2>smaller figures and a labelled choice</h2>
+  <p class="lead">Inside a part, figures go one size down. A choice that belongs to no heading gets a small label.</p>
+  {{ ui.figures(band[:3], "Example figures") }}
+  <div class="choices">{{ ui.choice("Show as", seg, "A hint can sit under it.") }}</div>
+</section>
+
+<section class="part">
+  <h2>controls</h2>
+  <form class="form" method="get" action="/kit">
+    {{ ui.field("starting_me", "Starting meal exchanges", "160", type="number", step="1") }}
+    {{ ui.field("semester_end", "Semester end", "2026-12-18", type="date", hint="The last day counts in full.") }}
+    <label class="field"><span>Rounding</span><select name="rounding_mode"><option>floor</option><option>round</option><option>ceil</option></select></label>
+    <label class="field"><span>Meals a day</span><input class="slider" type="range" min="0" max="4" step="0.25" value="2"></label>
+    <div>{{ ui.switch("exclude_away", "Leave out days away", checked=True) }}</div>
+    <div>{{ ui.switch("dd_rollover", "Dining dollars roll over") }}</div>
+    <div><button class="btn primary" type="submit">Save settings</button> <a class="btn" href="{{ ctx.url('/kit') }}">Cancel</a></div>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block main %}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{{ ui.band(band) }}
+
+<section class="part slide" style="--i:3" id="rates">
+  <div class="part-head">
+    <h2>average use</h2>
+    {{ ui.seg(per_options, "Show the average for") }}
+  </div>
+  <p class="lead">Average use a {{ per }}, over the days the data covers. The two pots have their own scales.</p>
+  <div class="two">
+    <div>
+      <h3>Meal exchanges a {{ per }}</h3>
+      {{ rates.ME }}
+    </div>
+    <div>
+      <h3>Dining dollars a {{ per }}</h3>
+      {{ rates.DD }}
+    </div>
+  </div>
+</section>
+
+<section class="part slide" style="--i:4" id="exchanges-by-week">
+  <h2>meal exchanges by week</h2>
+  <p class="lead">{{ weekly.ME.lead }} Week 1 starts on the semester's first day.</p>
+  {{ weekly.ME.chart }}
+</section>
+
+<section class="part slide" style="--i:5" id="dollars-by-week">
+  <h2>dining dollars by week</h2>
+  <p class="lead">{{ weekly.DD.lead }}</p>
+  {{ weekly.DD.chart }}
+  <p class="fine">Week 1 starts on each semester's first day. Hollow points are part weeks (the edge of an export, or the week in progress), so they total fewer days.</p>
+</section>
+
+<section class="part slide" style="--i:6" id="places">
+  <h2>top places</h2>
+  <p class="lead">The places you went most in each semester. A visit is one exchange swipe or one dining-dollar purchase.</p>
+  <div class="cmp-places">
+    {%- for p in places %}
+    <div>
+      <h3>{{ p.name }}</h3>
+      {%- if p.covers %}<p class="cmp-covers">{{ p.covers | dates }}</p>{% endif %}
+      {{ p.chart }}
+    </div>
+    {%- endfor %}
+  </div>
+  {%- if places_table.rows %}
+  {{ ui.table(places_table, "Top places by semester") }}
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:7" id="semesters">
+  <h2>{{ "semester by semester" if several else "this semester" }}</h2>
+  <p class="lead">Every figure, counted over the days the data covers.</p>
+  {{ ui.table(summary, "Semester summaries") }}
+</section>
+{%- endif %}
+{% endblock %}

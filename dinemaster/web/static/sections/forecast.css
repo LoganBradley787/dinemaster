@@ -1,0 +1,16 @@
+/* forecast: the three figures under each pot's chart, and the legend swatch for the likely range. */
+
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 20px clamp(24px, 4vw, 56px);
+  margin: 22px 0 0; padding: 18px 0 0; border-top: 1px solid var(--rule); }
+.facts > div { min-width: 0; }
+.facts dt { font-size: 13.5px; color: var(--dim); }
+.facts dd { margin: 2px 0 0; }
+.facts .amount { display: block; font-size: 30px; font-weight: 300; line-height: 1.15; color: var(--ink); white-space: nowrap; }
+.facts .more { display: block; margin-top: 2px; font-size: 13.5px; color: var(--dim); }
+
+/* the shaded band in the chart is the pot's colour at low strength; its legend box matches */
+.legend .k.box.range { opacity: 0.4; }
+
+@media (max-width: 480px) {
+  .facts .amount { font-size: 26px; }
+}

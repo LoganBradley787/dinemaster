@@ -1,0 +1,47 @@
+/* The plan section. Only role variables and palette meanings: no colour value is written here. */
+
+/* ---- jump links to the page's parts ---- */
+.jump { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 22px; margin: clamp(26px, 3vw, 38px) 0 0; font-size: 15px; }
+.jump span { color: var(--dim); }
+.jump a { display: inline-flex; align-items: center; min-height: 36px; text-underline-offset: 4px; text-decoration-color: var(--axis); }
+.jump a:hover { text-decoration-color: var(--ink); }
+.jump + .part { margin-top: clamp(36px, 4.5vw, 60px); }
+
+/* ---- the next 14 days: one flat tile a day, one block a meal ---- */
+.cal { display: grid; gap: clamp(3px, .6vw, 8px); margin-top: 22px; max-width: 1080px; }
+.cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: clamp(3px, .6vw, 8px); }
+.cal-head span { font-size: 13px; color: var(--dim); padding: 0 0 2px clamp(4px, .9vw, 12px); }
+.cal .day { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: clamp(86px, 9.5vw, 132px);
+  padding: clamp(6px, .9vw, 12px) clamp(4px, .9vw, 12px) clamp(6px, .9vw, 12px); background: var(--wash); }
+.cal .when { font-size: clamp(11.5px, 1.1vw, 14px); line-height: 1.2; color: var(--dim); white-space: nowrap; }
+.cal .count { margin-top: auto; font-size: clamp(30px, 4.4vw, 58px); font-weight: 200; line-height: 1; letter-spacing: -.03em;
+  font-variant-numeric: tabular-nums; }
+.cal .count .unit { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.cal .count.word { font-size: clamp(12px, 1.3vw, 17px); font-weight: 300; letter-spacing: 0; line-height: 1.3; color: var(--dim); }
+.cal .pips { display: flex; gap: 3px; height: clamp(6px, .8vw, 9px); margin-top: clamp(5px, .7vw, 9px); }
+.cal .pips i { flex: 0 1 clamp(10px, 2.2vw, 30px); background: var(--meals); }
+.cal .none .count { color: var(--faint); }
+.cal .away { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+.cal .out { background: transparent; }
+.cal .out .when { color: var(--faint); }
+/* today: a top edge in the ink colour, as on the Start screen. Colour is taken by meaning */
+.cal .today::before { content: ""; position: absolute; left: 0; right: 0; top: 0; height: 4px; background: var(--ink); }
+.cal .today .when { color: var(--ink); font-weight: 600; padding-top: 3px; }
+@media (max-width: 620px) { .cal .mo:not(.keep) { display: none; } }
+
+/* ---- the what-if figures (ui.figures) keep to the left ---- */
+#what-if-live .figures { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 300px)); }
+#what-if-live > .two { margin-top: 34px; }
+
+/* ---- text inside a part ---- */
+.part ul.plain { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; font-size: 16px; max-width: 44em; }
+.part .body { margin: 12px 0 0; font-size: 16px; max-width: 46em; }
+.part .narrow { max-width: 760px; margin-top: 14px; }
+.part > .table-wrap { margin-top: 26px; }
+
+/* ---- the what-if control: a slider, the rate in words, a button for when script is off ---- */
+.whatif { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 22px; margin-top: 20px; }
+.whatif label { flex-basis: 100%; font-size: 13px; color: var(--dim); }
+.whatif .slider { flex: 1 1 260px; }
+.whatif output { min-width: 7.2em; font-size: clamp(22px, 2.2vw, 28px); font-weight: 200; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.whatif.js .btn { display: none; }

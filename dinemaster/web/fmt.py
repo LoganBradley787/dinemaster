@@ -1,0 +1,58 @@
+"""Text formatters shared by pages and templates. `register(env)` adds them as Jinja filters.
+
+In a template: `{{ x|num }}`, `{{ x|money }}`, `{{ x|cents }}`, `{{ d|day }}`, `{{ n|ago }}`,
+`{{ p|chance }}`, `{{ n|plural("meal") }}`, `{{ x|signed }}`, `{{ x|pct }}`, `{{ d|weekday }}`,
+`{{ text|dates }}` (keeps "Dec 18" on one line), `{{ kind|fill }}` (a palette meaning's colour).
+In Python: `from dinemaster.web import fmt` then `fmt.money(12.5)`.
+"""
+
+from __future__ import annotations
+
+from datetime import date
+
+from ..palette import fill, need_meaning
+from ..tiles import ago, cents, chance, clip, day, keep_dates, money, num, plural, span
+
+__all__ = ["ago", "cents", "chance", "clip", "day", "money", "num", "plural", "span", "signed", "pct", "weekday", "between", "sentences", "register"]
+
+
+def signed(x: float | None, digits: int = 1) -> str:
+    """A difference with its sign: "+3.2", "-1", "0"; "n/a" for None."""
+    if x is None:
+        return "n/a"
+    text = num(abs(x), digits)
+    if float(text.replace(",", "")) == 0:
+        return "0"
+    return ("+" if x > 0 else "-") + text
+
+
+def pct(x: float | None) -> str:
+    """A 0..1 share as a whole percent: "43%"."""
+    return "n/a" if x is None else f"{x * 100:.0f}%"
+
+
+def weekday(d: date) -> str:
+    """"Sunday, Oct 11"."""
+    return f"{d:%A}, {day(d)}"
+
+
+def between(lo: float, hi: float, each=lambda x: num(x, 0)) -> str:
+    """A range in words: "20 to 31", or just "20" when both ends read the same."""
+    a, b = each(lo), each(hi)
+    return a if a == b else f"{a} to {b}"
+
+
+def sentences(text: str) -> str:
+    """A sentence from a math module in this app's voice: a long dash becomes a full stop and the
+    next word a capital, a date-range dash becomes "to". "Swipe first — use 11." -> "Swipe first. Use 11."."""
+    first, *rest = str(text).split(" — ")
+    for part in rest:
+        first = first.rstrip(".") + ". " + part[:1].upper() + part[1:]
+    return first.replace("–", " to ").replace("  ", " ")
+
+
+def register(env) -> None:
+    env.filters.update(
+        num=num, money=money, cents=cents, day=day, ago=ago, chance=chance, plural=plural, span=span,
+        signed=signed, pct=pct, weekday=weekday, dates=keep_dates, fill=fill, meaning=need_meaning,
+    )  # fmt: skip

@@ -5,15 +5,20 @@ description = "UVA dining plan tracker"
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
-    "streamlit>=1.38",
     "pandas>=2.2",
-    "plotly>=5.24",
     "icalendar>=7.3.0",
     "playwright>=1.63.0",
+    "fastapi>=0.143.0",
+    "uvicorn>=0.30",
+    "jinja2>=3.1.6",
+    "python-multipart>=0.0.32",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8",
+]
 
 [tool.uv]
 package = false

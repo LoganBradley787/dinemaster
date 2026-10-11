@@ -1,0 +1,66 @@
+/* The data section: action rows, the fetch status, fold-away detail, the settings form, the view controls.
+   Colours are role variables only (see metro.css). */
+
+/* a row of buttons; each may sit in its own form */
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 14px; margin-top: 22px; }
+.actions form { display: contents; }
+.actions .fine { margin: 0; }
+.btn:disabled { border-color: var(--axis); background: transparent; color: var(--dim); cursor: default; }
+
+/* notes inside a part sit closer to what they are about */
+.part .notes { margin-top: 18px; }
+
+/* the fetch while it runs: one sentence and a Metro progress bar */
+.fetch:empty { display: none; }
+.fetch-say { margin: 22px 0 0; font-size: 17px; font-weight: 300; max-width: 44em; }
+.progress { position: relative; height: 4px; margin-top: 14px; max-width: 620px; background: var(--soft); overflow: hidden; }
+.progress i { position: absolute; top: 0; bottom: 0; left: 0; width: 28%; background: var(--ink); animation: data-run 1.6s var(--ease) infinite; }
+@keyframes data-run { from { transform: translateX(-100%); } to { transform: translateX(360%); } }
+@media (prefers-reduced-motion: reduce) { .progress i { animation: none; width: 100%; opacity: .5; } }
+.fetch-lines { list-style: none; margin: 12px 0 0; padding: 0; font-size: 15px; color: var(--dim); }
+.fetch-lines li { padding: 2px 0; }
+
+/* detail that folds away: a plain summary line with a square marker */
+.more { margin-top: 26px; max-width: 100%; }
+.more > summary { display: inline-flex; align-items: center; gap: 10px; min-height: 40px; cursor: pointer; font-size: 16px; list-style: none; }
+.more > summary::-webkit-details-marker { display: none; }
+.more > summary::before { content: "+"; flex: none; width: 20px; height: 20px; border: 2px solid var(--ink); font-size: 15px; font-weight: 600;
+  line-height: 15px; text-align: center; }
+.more[open] > summary::before { content: "\2212"; }
+.more > summary:hover { color: var(--dim); }
+.more > .table-wrap { margin-top: 12px; }
+
+.by-hand { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 14px 24px; max-width: 860px; margin-top: 10px; }
+.by-hand .btn { margin-top: 18px; }
+.links { list-style: none; display: flex; flex-wrap: wrap; gap: 16px 24px; margin: 22px 0 0; padding: 0; }
+.links li { display: grid; gap: 5px; }
+.links span { font-size: 13px; color: var(--dim); }
+
+/* sub-headings inside the health part */
+.part h3.sub-head { margin-bottom: 0; }
+.part h3.sub-head + .fine { margin-top: 6px; }
+#health .two { margin-top: 18px; }
+#health .two .table-wrap + .table-wrap { margin-top: 26px; }
+
+/* the settings form: groups under a thin rule */
+.settings { margin-top: 8px; max-width: 980px; }
+.settings fieldset { margin: 30px 0 0; padding: 0; border: 0; min-width: 0; }
+.settings legend { width: 100%; padding: 0 0 8px; margin-bottom: 16px; border-bottom: 1px solid var(--rule); font-size: 18px; }
+.settings .switches { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; margin-top: 18px; }
+.settings .hint, .view .hint { font-size: 13px; color: var(--faint); }
+.away-row { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr); align-items: end; gap: 14px 36px; }
+.away-row + .away-row { margin-top: 20px; }
+.away-name { display: grid; gap: 2px; }
+.settings .actions { margin-top: 36px; }
+
+/* the view controls */
+.view { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 28px clamp(28px, 5vw, 72px); margin-top: 22px; }
+.view-date { display: grid; grid-template-columns: minmax(0, 250px) auto; align-items: start; gap: 14px 20px; }
+.view-date .btn { margin-top: 18px; }
+
+@media (max-width: 560px) {
+  .by-hand, .view-date { grid-template-columns: minmax(0, 1fr); }
+  .by-hand .btn, .view-date .btn { margin-top: 0; justify-self: start; }
+  .away-row { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .away-name { grid-column: 1 / -1; }
+}

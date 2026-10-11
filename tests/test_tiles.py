@@ -1,17 +1,19 @@
-"""Tiles page: what the tiles say, that live tiles flip with CSS only, and that text fits its tile.
+"""Start-screen tiles: what the tiles say, that live tiles flip with CSS only, and that text fits its tile.
 
 All data is synthetic. `raw_dir` points at an empty folder so the observed window comes from the
-last transaction of each pot, never from real export files.
+last transaction of each pot, never from real export files. Markup comes from `groups_html`, which the web app's Start screen
+renders, and styles from the web app's `metro.css`.
 """
 
 import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
 
-from dinemaster import budget
+from dinemaster import budget, palette
 from dinemaster import tiles as T
 from dinemaster.config import AwayPeriod, Marker, SemesterDef, load_config
 
@@ -20,6 +22,8 @@ S = date(2026, 8, 21)  # a Friday
 LAST = date(2026, 9, 22)  # a Tuesday: the last day the synthetic data covers
 AS_OF = date(2026, 9, 23)  # a Wednesday
 MON, TUE, WED, THU, FRI, SAT, SUN = range(7)
+#: the stylesheet the Start screen is served with
+WEB_CSS = (Path(T.__file__).parent / "web" / "static" / "metro.css").read_text()
 
 
 def frame(rows):
@@ -104,7 +108,7 @@ def test_verdict_uses_forecast_range_and_chance(cfg):
     groups, data = page(cfg, steady_rows())
     verdict = groups[0].tiles[0]
     f = data.forecast.me
-    assert verdict.size == "large" and verdict.pre == "On pace to leave" and verdict.color == T.ORANGE
+    assert verdict.size == "large" and verdict.pre == "On pace to leave" and verdict.kind == T.LOOK
     assert verdict.value == T.num(f.leftover_p50, 0)
     assert "meal exchanges unused on Dec 18" in verdict.post
     assert f"likely {T.num(f.leftover_lo, 0)}" in verdict.post
@@ -141,7 +145,7 @@ def test_unused_exchanges_get_a_ladder_a_cost_and_the_days_they_come_from(cfg):
     gap = tile(groups, "Days with no swipe", "pace")
     assert gap.post.startswith("Sat days")  # the steady rows never swipe on a Saturday
     even = tile(groups, "Against an even pace", "pace")
-    assert even.color == T.ORANGE and "more exchanges left" in even.post
+    assert even.kind == T.LOOK and "more exchanges left" in even.post
     text = faces(groups)
     assert "Two meals every day" not in text and "You can eat" not in text and "Dining dollars will hold" not in text
 
@@ -187,7 +191,7 @@ def test_stale_data_says_so_and_drops_todays_plan(cfg):
     groups, data = page(replace(cfg, as_of=when), steady_rows(), today=when)
     assert data.stale and data.plan is None
     first = groups[0].tiles[0]
-    assert (first.pre, first.value, first.color) == ("Your data is", "11 days old", T.RED)
+    assert (first.pre, first.value, first.kind) == ("Your data is", "11 days old", T.PROBLEM)
     assert "Today's plan" not in faces(groups)
 
 
@@ -206,7 +210,7 @@ def test_rollover_changes_leftover_wording(cfg):
 def test_running_out_of_both(cfg):
     groups, data = page(cfg, heavy_rows())
     verdict = groups[0].tiles[0]
-    assert verdict.pre == "Meal exchanges run out" and verdict.color == T.RED
+    assert verdict.pre == "Meal exchanges run out" and verdict.kind == T.PROBLEM
     assert verdict.value == T.day(data.forecast.me.runout_p50)
     assert "likely " in verdict.post and "early" in verdict.post and "chance they last to Dec 18" in verdict.post
     out = tile(groups, "Dining dollars run out")
@@ -222,7 +226,7 @@ def test_no_usage_yet_does_not_crash(cfg):
 
 
 def test_empty_ledger_still_builds_a_page(cfg):
-    html = T.build_page_html(cfg, pd.DataFrame(columns=COLS), AS_OF)
+    html = T.groups_html(T.build_groups(T.gather(cfg, pd.DataFrame(columns=COLS), AS_OF)))
     assert "nothing to project from" in html
 
 
@@ -301,7 +305,7 @@ def test_stale_data_names_the_week_instead_of_calling_it_this_week(cfg):
     week = next(g for g in groups if g.title == "this week").tiles
     assert week[0].pre == "Week of Sep 21"
     stale = tile(groups, "Data through")
-    assert (stale.value, stale.post, stale.color) == ("Sep 22", "22 days ago", T.RED)
+    assert (stale.value, stale.post, stale.kind) == ("Sep 22", "22 days ago", T.PROBLEM)
 
 
 def test_a_week_that_is_already_past_is_compared_with_the_week_before_it(cfg):
@@ -356,35 +360,35 @@ def test_calendar_tiles(cfg):
 
 def test_render_escapes_text(cfg):
     groups, _ = page(cfg, [swipe(d, place="<b>Hall</b>") for d in days()])
-    html = T.render_html(groups, "Dining", "as of today")
+    html = T.groups_html(groups)
     assert "<b>Hall</b>" not in html and "&lt;b&gt;Hall&lt;/b&gt;" in html
 
 
 def test_live_tiles_flip_with_css_only(cfg):
-    html = T.build_page_html(cfg, frame(steady_rows()), AS_OF)
+    html = T.groups_html(T.build_groups(T.gather(cfg, frame(steady_rows()), AS_OF)))
     assert "<script" not in html.lower()
-    live = re.findall(r'<div class="tile \w+ live" style="([^"]*)"><div class="flip"><div class="face front"', html)
+    live = re.findall(r'<div class="tile \w+ live(?: today)?" style="([^"]*)"><div class="flip"><div class="face front" data-kind="\w+"', html)
     assert len(live) >= 8
     assert html.count('class="face back"') == len(live)
     # staggered: no two live tiles share a period and a delay, and neighbours differ in both
     timings = [(re.search(r"--t:(\d+)s", s).group(1), re.search(r"--d:([\d.]+)s", s).group(1)) for s in live]
     assert len(set(timings)) == len(timings)
     assert all(a[0] != b[0] and a[1] != b[1] for a, b in zip(timings, timings[1:]))
-    assert "@keyframes metro-flip" in T.CSS
-    assert ".metro .tile:hover .flip { animation-play-state: paused; }" in T.CSS
-    reduced = T.CSS.split("@media (prefers-reduced-motion: reduce)")[1].split("@container")[0]
+    assert "@keyframes metro-flip" in WEB_CSS
+    assert ".metro .tile:hover .flip { animation-play-state: paused; }" in WEB_CSS
+    reduced = WEB_CSS.split("@media (prefers-reduced-motion: reduce) {\n  .metro .tile")[1].split("@container")[0]
     assert ".metro .flip { animation: none; }" in reduced
 
 
 def test_static_tiles_have_one_face(cfg):
-    html = T.render_html([T.Group("g", [T.Tile("a", "1", "b", T.BLUE)])], "t", "s")
+    html = T.groups_html([T.Group("g", [T.Tile("a", "1", "b", T.MEALS)])])
     assert html.count('class="face"') == 1 and 'class="flip"' not in html
-    assert '<div class="tile sq" style="background:#2672EC;--i:0">' in html
+    assert '<div class="tile sq" data-kind="meals" style="background:#2672EC;--i:0">' in html
 
 
 def test_post_line_breaks_and_sentences_render(cfg):
-    front = T.Tile("p", "", "", T.BLUE, "large", lines=("One.", "Two & three."), back=T.Tile("p", "5", "a\nb <c>", T.RED))
-    html = T.render_html([T.Group("g", [front])], "t", "s")
+    front = T.Tile("p", "", "", T.MEALS, "large", lines=("One.", "Two & three."), back=T.Tile("p", "5", "a\nb <c>", T.PROBLEM))
+    html = T.groups_html([T.Group("g", [front])])
     assert "<span>One.</span><span>Two &amp; three.</span>" in html
     assert "a<br>b &lt;c&gt;" in html
     assert "background:#E51400" in html  # the back face keeps its own colour
@@ -420,10 +424,10 @@ def test_line_allowances_always_fit_the_tile_height():
     long_text = "words " * 60
     for size, height, pre_line, post_line, value_px in (("sq", 83.0, 14.1, 14.1, 37.5), ("wide", 83.0, 14.1, 14.1, 37.5), ("large", 185.0, 17.7, 15.9, 78.0)):
         for face in (
-            T.Tile(long_text, "88", long_text, T.BLUE),
-            T.Tile(long_text, long_text, long_text, T.BLUE),
-            T.Tile("", "88", long_text, T.BLUE),
-            T.Tile(long_text, "88", long_text, T.BLUE, bar=0.5),
+            T.Tile(long_text, "88", long_text, T.MEALS),
+            T.Tile(long_text, long_text, long_text, T.MEALS),
+            T.Tile("", "88", long_text, T.MEALS),
+            T.Tile(long_text, "88", long_text, T.MEALS, bar=0.5),
         ):
             lay = T._layout(face, size)
             g = T.GEOMETRY[size]
@@ -431,15 +435,15 @@ def test_line_allowances_always_fit_the_tile_height():
             bar = 10.0 if face.bar is not None else 0.0
             gap = 5.0 if size == "large" else 3.0
             assert lay.pre * pre_line + value + lay.post * post_line + gap + bar <= height, (size, face.bar, lay)
-    lay = T._layout(T.Tile(long_text, "", "", T.BLUE, lines=(long_text,)), "large")
+    lay = T._layout(T.Tile(long_text, "", "", T.MEALS, lines=(long_text,)), "large")
     assert lay.pre * 17.7 + lay.say * 17.6 + 3 * 4.1 <= 185.0
 
 
 def test_overlong_text_is_reported():
-    assert T.problems(T.Tile("Data covers through the last day", "Sep 30", "yesterday", T.SLATE))
-    assert T.problems(T.Tile("Monday", "1.7", "meals a day on a typical Monday", T.NAVY))  # three caption lines on a square
-    assert T.problems(T.Tile("x", "", "", T.BLUE, "wide", lines=("Sentence.",)))
-    assert not T.problems(T.Tile("Monday", "1.7", "meals a day", T.NAVY))
+    assert T.problems(T.Tile("Data covers through the last day", "Sep 30", "yesterday", T.UNKNOWN))
+    assert T.problems(T.Tile("Monday", "1.7", "meals a day on a typical Monday", T.MEALS))  # three caption lines on a square
+    assert T.problems(T.Tile("x", "", "", T.MEALS, "wide", lines=("Sentence.",)))
+    assert not T.problems(T.Tile("Monday", "1.7", "meals a day", T.MEALS))
 
 
 @pytest.mark.parametrize("rows", [steady_rows, heavy_rows, lambda: steady_rows("GH Gastons Market Just Walk Out")])
@@ -453,3 +457,186 @@ def test_every_tile_fits(cfg, rows):
         groups, _ = page(variant, old + rows())
         found = [p for g in groups for t in g.tiles for p in T.problems(t)]
         assert found == []
+
+
+# --- every colour means one thing ---------------------------------------------
+
+M = palette.Meaning
+VERDICT = {M.GOOD, M.LOOK, M.PROBLEM}
+#: Every face the page can show, by its top line (or, without one, its bottom line), and the
+#: meanings it may take. A face that judges lists verdicts; any other lists the one thing its
+#: number measures. A new tile must be added here, which is the point.
+ALLOWED = [
+    # right now
+    (r"^(No meals used yet|No forecast yet)\|", {M.UNKNOWN}),
+    (r"^The semester ended with\|", {M.MEALS}),
+    (r"^Meal exchanges\|", {M.PROBLEM}),  # all used up
+    (r"^(On pace to leave|On track to have|Meal exchanges run out)\|", VERDICT),
+    (r"^Chance (you use them all by|they last to) ", VERDICT),
+    (r"^(Today's plan|Tomorrow's plan|The plan starts .*)\|", {M.MEALS}),
+    (r"^\w{3} to \w{3}, day by day\|", {M.MEALS}),
+    (r"^Your data is\|", {M.PROBLEM}),
+    (r"^\|exchanges left", {M.MEALS}),
+    (r"^\|dining dollars", {M.DOLLARS}),
+    (r"^\|of the semester done", {M.DAYS}),
+    (r"^(Thanksgiving recess|Final Examinations)\|", {M.DAYS}),  # the calendar tiles: a date range
+    # projections
+    (r"^Dining dollars\|no spending yet", {M.UNKNOWN}),
+    (r"^Dining dollars\|all spent", {M.PROBLEM}),
+    (r"^Dining dollars will hold\|", {M.GOOD, M.LOOK}),
+    (r"^Left over on .*\|.*carries into spring", {M.DOLLARS}),
+    (r"^Left over on .*\|goes unspent", {M.LOOK}),
+    (r"^That is enough for\|", {M.LOOK}),
+    (r"^Dining dollars run out\|", {M.PROBLEM}),
+    (r"^Two meals every day lasts until\|", {M.GOOD, M.PROBLEM}),
+    # pace
+    (r"^(To finish at zero|To use them all)\|", {M.MEALS}),
+    (r"^Every week until ", {M.MEALS}),
+    (r"^Unused exchanges cost about\|", {M.LOOK}),
+    (r"^Each meal you do eat costs\|", {M.DOLLARS}),
+    (r"^Days with no swipe\|", {M.DAYS}),
+    (r"^.*, swipes a day\|", {M.MEALS}),
+    (r"^(You can eat|or)\|", {M.MEALS}),
+    (r"^Against an even pace\|", VERDICT),
+    (r"^A week from here looks like\|", {M.DAYS}),
+    (r"^\|exchanges a day so far", {M.MEALS}),
+    (r"^\|a day in dining dollars", {M.DOLLARS}),
+    # day by day
+    (r"^(Biggest day|Lightest day)\|", {M.DAYS}),
+    (r"^(\w+day|\w{3} · today)\|not seen yet", {M.UNKNOWN}),
+    (r"^(\w+day|\w{3} · today)\|meals? a day", {M.MEALS}),
+    (r"^(\w+day|\w{3} · today)\|dining \$ a day", {M.DOLLARS}),
+    # this week
+    (r"^(This week|This week so far|Last week|Week of .*)\|", {M.MEALS}),
+    # habits
+    (r"^Your most-swiped spot\|", {M.PLACES}),
+    (r"^You're usually there around\|", {M.DAYS}),
+    (r"^After .* you've spent\|", {M.DOLLARS}),
+    (r"^After [^|]*\|late-night meal", {M.MEALS}),
+    (r"^Late-night favorite\|", {M.PLACES}),
+    (r"^(Longest run of days with a meal|Most days in a row at one place)\|", {M.DAYS}),
+    (r"^Meal exchanges vs ", {M.MEALS}),
+    (r"^Dining dollars vs ", {M.DOLLARS}),
+    (r"^.* favorite\|", {M.PLACES}),
+    (r"^\|meals, ", {M.MEALS}),
+    (r"^\|on \d+ (snack|DD meal)", {M.DOLLARS}),
+    (r"^Data through\|", {M.DAYS, M.PROBLEM}),
+]
+
+
+@pytest.fixture
+def scenarios(cfg):
+    """name -> (groups, data): on track, going unused, running out, no data, stale, rollover on and off."""
+    spring = SemesterDef("Spring 2026", date(2026, 1, 14), date(2026, 5, 9))
+    old = [dd(d, 9.0, "snack", "Vending Room") for d in days(date(2026, 3, 1), date(2026, 3, 10))] + [
+        swipe(d, place="Hall B") for d in days(date(2026, 3, 1), date(2026, 3, 10))
+    ]
+    away = AwayPeriod("Thanksgiving recess", date(2026, 11, 25), date(2026, 11, 29))
+    exams = Marker("Final Examinations", date(2026, 11, 28), date(2026, 12, 2))
+    full = replace(cfg, history=(spring,), away_periods=(away,), markers=(exams,), plan_price=2190.0, plan_dd_in_price=300.0)
+    when = AS_OF + timedelta(days=10)
+    return {
+        "on track": page(replace(cfg, starting_me=140, run_out_tiles="always"), steady_rows()),
+        "going unused": page(full, old + steady_rows()),
+        "running out": page(full, old + heavy_rows()),
+        "no data": page(cfg, [("ME", "2026-08-20 09:00", "Deposit", 160.0, "load", None)]),
+        "empty": page(cfg, []),
+        "stale": page(replace(full, as_of=when), steady_rows(), today=when),
+        "rollover on": page(replace(full, dd_rollover=True, run_out_tiles="always"), steady_rows()),
+        "rollover off": page(replace(full, dd_rollover=False, run_out_tiles="always"), steady_rows()),
+        "away counted": page(replace(full, exclude_away=False), old + steady_rows()),
+        "a weekday not seen": page(replace(cfg, as_of=S + timedelta(days=3)), [swipe(d) for d in days(S, S + timedelta(days=2))]),
+        "late meals": page(cfg, steady_rows() + [swipe(d, hour=23) for d in days(S, S + timedelta(days=4))]),
+    }
+
+
+def all_faces(groups):
+    return [f for g in groups for t in g.tiles for f in (t, t.back) if f is not None]
+
+
+def test_the_scenarios_are_what_they_say(scenarios):
+    def verdict(name):
+        return scenarios[name][0][0].tiles
+
+    assert verdict("on track")[0].pre == "On track to have" and verdict("on track")[0].kind in (M.GOOD, M.LOOK)
+    assert verdict("going unused")[0].kind is M.LOOK and verdict("running out")[0].kind is M.PROBLEM
+    assert verdict("no data")[1].kind is M.UNKNOWN and verdict("stale")[0].kind is M.PROBLEM
+    assert scenarios["stale"][1].stale and not scenarios["going unused"][1].stale
+
+
+def test_every_face_names_an_allowed_meaning(scenarios):
+    """Fronts and backs, in every scenario: the face is known, and its meaning is one the rule allows it."""
+    for name, (groups, _) in scenarios.items():
+        for f in all_faces(groups):
+            label = f"{f.pre}|{f.post.splitlines()[0] if f.post else ''}"
+            allowed = next((kinds for pattern, kinds in ALLOWED if re.match(pattern, label)), None)
+            assert allowed is not None, f"{name}: no rule for the face {label!r}; add it to ALLOWED"
+            assert f.kind in allowed, f"{name}: {label!r} is {f.kind.name}, allowed: {sorted(k.name for k in allowed)}"
+            assert f.color == f.kind.fill
+
+
+def test_what_decides_a_colour(scenarios):
+    """The decorative uses are gone: these faces take the colour of what they measure, whatever the data."""
+    groups, _ = scenarios["going unused"]
+    assert tile(groups, "Longest run of days with a meal").kind is M.DAYS  # was always green
+    assert next(f for f in all_faces(groups) if f.post.startswith("on ") and "snack" in f.post).kind is M.DOLLARS  # was always orange
+    weekdays = next(g for g in groups if g.title == "day by day").tiles[1:]
+    assert {t.kind for t in weekdays} == {M.MEALS} and [t.today for t in weekdays].count(True) == 1  # today is marked, not recoloured
+    fresh, old = tile(groups, "Data through"), tile(scenarios["stale"][0], "Data through")
+    assert (fresh.kind, old.kind) == (M.DAYS, M.PROBLEM)  # a date, until it is a problem
+    assert tile(scenarios["rollover on"][0], "Left over on").kind is M.DOLLARS and tile(scenarios["rollover off"][0], "Left over on").kind is M.LOOK
+    assert tile(scenarios["late meals"][0], "After ").kind in (M.MEALS, M.DOLLARS)
+
+
+def test_a_tile_cannot_be_given_a_colour():
+    for bad in ("#603CBA", "violet", None, palette.INK):
+        with pytest.raises(TypeError):
+            T.Tile("a", "1", "b", bad)
+    assert T.Tile("a", "1", "b", T.MEALS).color == "#2672EC"
+
+
+def test_the_key_lists_exactly_the_meanings_in_use(scenarios):
+    used = {f.kind for groups, _ in scenarios.values() for f in all_faces(groups)}
+    in_key = [m for _, meanings in palette.KEY for m in meanings]
+    assert set(in_key) == used == set(M) and len(in_key) == len(set(in_key))
+    assert [title for title, _ in palette.KEY] == ["what it measures", "how it's going"]
+    assert [m.label for m in in_key] == [
+        "meals and exchanges", "dollars", "days and dates", "places", "good", "worth a look", "a problem", "not enough data",
+    ]  # fmt: skip
+    assert len({m.fill for m in M}) == len(M)  # one colour, one meaning
+
+
+def test_rendered_tiles_use_only_palette_fills(scenarios):
+    fills = {m.fill: m.slug for m in M}
+    for groups, _ in scenarios.values():
+        html = T.groups_html(groups)
+        painted = re.findall(r'data-kind="(\w+)" style="background:(#[0-9A-F]{6})', html)
+        assert len(painted) == len(all_faces(groups))
+        assert all(fills.get(color) == slug for slug, color in painted)
+        assert set(re.findall(r"#[0-9A-Fa-f]{6}\b", html)) <= set(fills)
+
+
+def test_today_is_marked_without_a_colour(scenarios):
+    html = T.groups_html(scenarios["going unused"][0])
+    assert html.count(" today\"") == 1 and re.search(r'class="tile sq live today"', html)
+    assert ".metro .tile.today::before" in WEB_CSS
+
+
+def test_a_date_is_never_split_across_lines(scenarios):
+    assert T.keep_dates("meal exchanges unused on Dec 18") == "meal exchanges unused on Dec 18"
+    assert T.keep_dates("Sep 21–23 and Nov 28 – Dec 2") == "Sep 21–23 and Nov 28 – Dec 2"
+    assert T.keep_dates("May 2026, 18 meals") == "May 2026, 18 meals"
+    assert T.text_lines("on Dec 18", T.em("on Dec")) == 2  # "Dec 18" moves down as one word
+    html = T.groups_html(scenarios["going unused"][0])
+    assert "meal exchanges unused on Dec 18" in html and "Dec 18" not in html
+
+
+@pytest.mark.parametrize("value", [-0.0, -0.04, -0.004, 0.0])
+def test_formatters_never_print_negative_zero(value):
+    # a swipe and its reversal net to -0.0; a tiny negative rounds to it
+    assert T.num(value) == "0"
+    assert T.num(value, 0) == "0"
+    assert T.money(value) == "$0"
+    if abs(value) < 0.005:  # -0.04 is a real four cents below zero
+        assert T.cents(value) == "$0.00"
+    assert T.plural(value, "exchange swipe") == "0 exchange swipes"

@@ -1,0 +1,100 @@
+{#- Shared page blocks. In a template: {% import "partials/ui.html" as ui %} (base.html already does). -#}
+
+{#- The verdict: one plain sentence, and an optional quieter one under it. -#}
+{% macro verdict(text, sub=None) %}
+<header class="verdict slide">
+  <h1>{{ text | dates }}</h1>
+  {%- if sub %}<p class="sub">{{ sub | dates }}</p>{% endif %}
+</header>
+{% endmacro %}
+
+{#- Notes: a list of {kind, text, href?, link?}. `kind` is a palette meaning: PROBLEM or LOOK when the note
+    warns, otherwise what the note is about (MEALS, DOLLARS, DAYS, PLACES). Anything else is an error. -#}
+{% macro notes(items) %}
+{%- if items %}
+<ul class="notes slide" style="--i:1">
+  {%- for n in items %}
+  <li class="{{ (n.kind | meaning).slug }}" data-sign="{{ (n.kind | meaning).sign }}" style="--c:{{ n.kind | fill }}"><span>{{ n.text }}{% if n.href %} <a href="{{ n.href }}">{{ n.link or "More" }}</a>{% endif %}</span></li>
+  {%- endfor %}
+</ul>
+{%- endif %}
+{% endmacro %}
+
+{#- The number band: 3 to 5 of {value, label, detail?, kind}. `kind` is a palette meaning: a verdict
+    (GOOD, LOOK, PROBLEM, UNKNOWN) when the figure judges, otherwise what it measures. -#}
+{% macro band(stats) %}
+<div class="band slide" style="--i:2;--n:{{ stats | length }}">
+  {%- for s in stats %}
+  <p class="stat" data-kind="{{ (s.kind | meaning).slug }}" style="--c:{{ s.kind | fill }}">
+    <span class="figure">{{ s.value }}</span>
+    <span class="label">{{ s.label }}</span>
+    {%- if s.detail %}<span class="detail">{{ s.detail }}</span>{% endif %}
+  </p>
+  {%- endfor %}
+</div>
+{% endmacro %}
+
+{#- Smaller figures inside a part: the band's items ({value, label, detail?, kind}) one size down.
+    `label` names the group for screen readers. -#}
+{% macro figures(items, label) %}
+<div class="figures" role="group" aria-label="{{ label }}">
+  {%- for s in items %}
+  <p class="fig" data-kind="{{ (s.kind | meaning).slug }}" style="--c:{{ s.kind | fill }}">
+    <span class="v">{{ s.value }}</span>
+    <span class="l">{{ s.label | dates }}</span>
+    {%- if s.detail %}<span class="d">{{ s.detail | dates }}</span>{% endif %}
+  </p>
+  {%- endfor %}
+</div>
+{% endmacro %}
+
+{#- A table: t = {columns: [(label, is_number), ...], rows: [[cell, ...], ...]}. -#}
+{% macro table(t, label=None) %}
+<div class="table-wrap">
+<table class="t"{% if label %} aria-label="{{ label }}"{% endif %}>
+  <thead><tr>{% for name, numeric in t.columns %}<th scope="col"{% if numeric %} class="n"{% endif %}>{{ name }}</th>{% endfor %}</tr></thead>
+  <tbody>
+    {%- for row in t.rows %}
+    <tr>{% for cell in row %}<td{% if t.columns[loop.index0][1] %} class="n"{% endif %}>{{ cell }}</td>{% endfor %}</tr>
+    {%- endfor %}
+  </tbody>
+</table>
+</div>
+{% endmacro %}
+
+{#- A flat choice between views, as links: options = [{label, href, on}, ...]. -#}
+{% macro seg(options, label) %}
+<nav class="seg" aria-label="{{ label }}">
+  {%- for o in options %}
+  <a href="{{ o.href }}"{% if o.on %} aria-current="true"{% endif %}>{{ o.label }}</a>
+  {%- endfor %}
+</nav>
+{% endmacro %}
+
+{#- The same choice with a small label above it and an optional hint under it, for a choice that
+    does not belong to one part's heading. Put several in <div class="choices">. -#}
+{% macro choice(label, options, hint=None) %}
+<div class="choice"><span>{{ label }}</span>{{ seg(options, label) }}{% if hint %}<span class="hint">{{ hint }}</span>{% endif %}</div>
+{% endmacro %}
+
+{#- A Metro toggle switch (a checkbox). -#}
+{% macro switch(name, label, checked=False, value="1") %}
+<label class="switch"><input type="checkbox" name="{{ name }}" value="{{ value }}"{% if checked %} checked{% endif %}><span class="track"></span><span>{{ label }}</span></label>
+{% endmacro %}
+
+{#- An underline-style input with its label above. -#}
+{% macro field(name, label, value="", type="text", hint=None, step=None, min=None) %}
+<label class="field"><span>{{ label }}</span>
+  <input type="{{ type }}" name="{{ name }}" value="{{ value }}"{% if step %} step="{{ step }}"{% endif %}{% if min is not none %} min="{{ min }}"{% endif %}>
+  {%- if hint %}<span class="hint">{{ hint }}</span>{% endif %}
+</label>
+{% endmacro %}
+
+{#- What every page says when there are no exports yet. -#}
+{% macro no_data(ctx) %}
+<header class="verdict slide">
+  <h1>No dining data yet.</h1>
+  <p class="sub">Put your statement exports (one CSV file per account) into <code>{{ ctx.cfg.raw_dir }}</code>, then reload this page.</p>
+  <p class="sub"><a class="btn" href="{{ ctx.url('/data') }}">Go to data</a></p>
+</header>
+{% endmacro %}
