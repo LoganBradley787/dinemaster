@@ -14,7 +14,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from ...compare import SemesterSummary
-from ...tiles import cents, day, num, plural
+from ...tiles import cents, day, money, num, plural
 from . import kit
 
 TONES = {"ME": kit.MEALS, "DD": kit.DOLLARS}
@@ -115,7 +115,7 @@ def weekly_chart(weekly: pd.DataFrame, pot: str, names: Sequence[str]) -> Markup
                     part = "" if complete else f" (part week, {days} of 7 days)"
                     lines.append(f"{name}, week of {day(start)}: {amount(pot, v)}{part}")
         tips.append((week, "\n".join(lines) if len(lines) > 1 else ""))
-    tick = (lambda v: f"${v:,.0f}") if pot == "DD" else (lambda v: num(v, 0))
+    tick = money if pot == "DD" else (lambda v: num(v, 0))
 
     def draw(size: kit.Size):
         p = kit.plot(size, left=40, top=16)

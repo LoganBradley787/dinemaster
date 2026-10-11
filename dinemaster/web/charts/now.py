@@ -9,7 +9,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from ...config import Config
-from ...tiles import cents, day, num, plural
+from ...tiles import cents, day, money, num, plural
 from . import kit
 
 #: Days in a week by how many meals they had: the meals hue, stronger (further from the ground) for more;
@@ -183,4 +183,4 @@ def dd_places_chart(by_location: dict[str, dict[str, float]]) -> Markup:
         ]
         rows.append((str(place), segs))
     keys = [kit.Key("meals", kit.DOLLARS, "box"), kit.Key("snacks", snack, "box")]
-    return kit.hbar_figure(rows, "Dining dollars spent by place", fmt=lambda v: f"${v:,.0f}", legend_keys=keys, empty_text="No dining dollars spent yet.")
+    return kit.hbar_figure(rows, "Dining dollars spent by place", fmt=money, legend_keys=keys, empty_text="No dining dollars spent yet.")

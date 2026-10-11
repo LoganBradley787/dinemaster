@@ -103,17 +103,23 @@ class PageData:
 # ---------------------------------------------------------------------------
 
 
+def _no_negative_zero(x: float, digits: int) -> float:
+    """Round for display. A swipe and its reversal net to -0.0, which would print as "-0"."""
+    return round(x, digits) + 0.0
+
+
 def num(x: float, digits: int = 1) -> str:
     """Compact number: one decimal by default, without a trailing .0."""
+    x = _no_negative_zero(x, digits)
     return f"{x:,.{digits}f}".removesuffix("." + "0" * digits) if digits else f"{x:,.0f}"
 
 
 def money(x: float) -> str:
-    return f"${x:,.0f}"
+    return f"${_no_negative_zero(x, 0):,.0f}"
 
 
 def cents(x: float) -> str:
-    return f"${x:,.2f}"
+    return f"${_no_negative_zero(x, 2):,.2f}"
 
 
 def day(d: date) -> str:

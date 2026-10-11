@@ -9,7 +9,7 @@ import pandas as pd
 from markupsafe import Markup
 
 from ...habits import WEEKDAYS, format_hour
-from ...tiles import cents, day, plural
+from ...tiles import cents, day, num, plural
 from . import kit
 
 WEEKDAY_NAMES = dict(zip(WEEKDAYS, ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]))
@@ -60,7 +60,7 @@ def heat_chart(matrix: pd.DataFrame, rollover: int = 4, late: Sequence[int] = ()
         parts = [
             kit.axis_y(p, y),
             kit.axis_x(p, x, labels=hour_label, min_gap=30),
-            kit.heatmap(x, y, cells, kit.MEALS, tip=tip, label=lambda v: f"{v:.0f}"),
+            kit.heatmap(x, y, cells, kit.MEALS, tip=tip, label=lambda v: num(v, 0)),
         ]
         if late_shown:
             x0, x1 = x(late_shown[0]) - x.step / 2 + 1, x(late_shown[-1]) + x.step / 2 - 1

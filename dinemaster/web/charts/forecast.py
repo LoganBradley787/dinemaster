@@ -10,7 +10,7 @@ from markupsafe import Markup
 
 from ...config import Config
 from ...forecast import PotForecast
-from ...tiles import cents, day, num
+from ...tiles import cents, day, money, num
 from . import kit
 from .kit import _n, _tip  # the kit's own number and tooltip writers, for the one local mark below
 
@@ -103,7 +103,7 @@ def week_dollars_chart(profile: pd.DataFrame) -> Markup:
     if float(profile["dd_snack_avg"].sum()) > 0:
         keys.append(kit.Key("snacks", SNACK, "box"))
     keys.append(kit.Key("the rate the forecast uses", kit.INK))
-    return _week_figure(rows, ticks, tips, top * 1.08, lambda v: f"${v:,.0f}", label, keys)
+    return _week_figure(rows, ticks, tips, top * 1.08, money, label, keys)
 
 
 def pot_chart(

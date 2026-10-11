@@ -28,11 +28,11 @@ NO_RATE = "Not enough data yet."
 
 
 def f1(x: float) -> str:
-    return f"{x:,.1f}"
+    return f"{round(x, 1) + 0.0:,.1f}"  # + 0.0 so a net of -0.0 prints as 0.0
 
 
 def f2(x: float) -> str:
-    return f"{x:,.2f}"
+    return f"{round(x, 2) + 0.0:,.2f}"
 
 
 def n(x: float) -> str:

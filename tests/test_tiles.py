@@ -625,3 +625,14 @@ def test_a_date_is_never_split_across_lines(scenarios):
     assert T.text_lines("on Dec 18", T.em("on Dec")) == 2  # "Dec 18" moves down as one word
     html = T.groups_html(scenarios["going unused"][0])
     assert "meal exchanges unused on Dec 18" in html and "Dec 18" not in html
+
+
+@pytest.mark.parametrize("value", [-0.0, -0.04, -0.004, 0.0])
+def test_formatters_never_print_negative_zero(value):
+    # a swipe and its reversal net to -0.0; a tiny negative rounds to it
+    assert T.num(value) == "0"
+    assert T.num(value, 0) == "0"
+    assert T.money(value) == "$0"
+    if abs(value) < 0.005:  # -0.04 is a real four cents below zero
+        assert T.cents(value) == "$0.00"
+    assert T.plural(value, "exchange swipe") == "0 exchange swipes"
