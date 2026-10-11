@@ -1,7 +1,7 @@
 """Day-of-week-aware forecast of the two pots (meal exchanges and dining dollars).
 
-Pure functions over the ingest DataFrame + `Config`; no Streamlit, no file writes. Figures for
-these results live in `dinemaster.forecast_charts`.
+Pure functions over the ingest DataFrame + `Config`; no page code, no file writes. Charts for
+these results live in `dinemaster.web.charts.forecast`.
 
 The idea in three steps
 -----------------------

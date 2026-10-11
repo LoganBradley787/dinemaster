@@ -1,14 +1,14 @@
-"""Metro-style (Windows 8 Start screen) tile page: plain-sentence verdicts over the app's numbers.
+"""Metro-style (Windows 8 Start screen) tiles: plain-sentence verdicts over the app's numbers.
 
-`build_page_html(cfg, df, today)` is the only entry point `app.py` needs. It runs in three steps:
+The web app's Start screen (`dinemaster/web/app.py`) builds its tiles in three steps:
 
-    gather        collects everything the page shows (metrics, the day-of-week forecast, the daily
+    gather        collects everything the tiles show (metrics, the day-of-week forecast, the daily
                   plan and spend-down, weekly recaps, habits, semester comparison) into `PageData`.
     build_groups  turns that into `Group`s of `Tile`s — pure text and meanings (`palette.py` holds the colours), easy to test.
-    render_html   turns tiles into markup plus the page's CSS.
+    groups_html   turns tiles into markup. The styles are in `dinemaster/web/static/metro.css`.
 
 Live tiles: a `Tile` may carry a `back` face. The page flips between the two faces on a timer with
-CSS only (Streamlit strips scripts): each live tile gets its own period and delay so they never
+CSS only, no script: each live tile gets its own period and delay so they never
 flip in unison, a tile stops flipping while the pointer is over it, and with "reduce motion" on
 only the front face shows. So the front always carries the main fact; the back adds to it.
 
@@ -850,96 +850,6 @@ def build_groups(data: PageData) -> list[Group]:
 # rendering
 # ---------------------------------------------------------------------------
 
-CSS = """
-<style>
-.stApp { background: #1B0E45; }
-[data-testid="stHeader"] { background: transparent; }
-[data-testid="stMainBlockContainer"] { max-width: none; padding-top: 2.5rem; }
-.metro { container-type: inline-size; color: #fff;
-  font-family: "Segoe UI", "Segoe WP", "Selawik", "Open Sans", "Helvetica Neue", system-ui, sans-serif; }
-.metro .top { display: flex; align-items: baseline; justify-content: space-between; margin: 0 0 28px; }
-.metro h1 { font-weight: 200; font-size: 58px; line-height: 1; letter-spacing: -1px; margin: 0; padding: 0; color: #fff; }
-.metro .asof { font-weight: 300; font-size: 18px; opacity: .85; text-align: right; }
-/* tile unit sized so two 4-column groups sit side by side when the page is wide enough */
-.metro .groups { --u: clamp(104px, calc((100cqw - 56px - 48px) / 8), 150px);
-  display: flex; flex-wrap: wrap; gap: 36px 56px; }
-.metro h2 { font-weight: 300; font-size: 20px; margin: 0 0 10px; padding: 0; color: #fff; opacity: .9; }
-.metro .grid { display: grid; grid-template-columns: repeat(4, var(--u)); grid-auto-rows: var(--u);
-  grid-auto-flow: dense; gap: 8px; }
-/* every size inside a tile follows --u, so a tile looks the same (and fits the same text) at any size */
-.metro .tile { position: relative; overflow: hidden; border-radius: 0; perspective: calc(var(--u) * 9);
-  --cap: clamp(11.5px, calc(var(--u) * .092), 15px);
-  transition: transform .12s; animation: metro-in .5s cubic-bezier(.1,.9,.2,1) both;
-  animation-delay: calc(var(--i) * 28ms); }
-.metro .tile::after { content: ""; position: absolute; inset: 0; border: 3px solid transparent;
-  pointer-events: none; transition: border-color .12s; }
-.metro .tile:hover::after { border-color: rgba(255,255,255,.45); }
-.metro .tile:active { transform: scale(.975); }
-.metro .wide { grid-column: span 2; }
-.metro .large { grid-column: span 2; grid-row: span 2; }
-.metro .face { position: absolute; inset: 0; box-sizing: border-box; display: flex; flex-direction: column;
-  justify-content: flex-end; overflow: hidden;
-  padding: calc(var(--u) * .08) calc(var(--u) * .09) calc(var(--u) * .09); }
-.metro .large .face { padding: calc(var(--u) * .11) calc(var(--u) * .12) calc(var(--u) * .12); }
-.metro .pre, .metro .post, .metro .say, .metro .val.long { display: -webkit-box; -webkit-box-orient: vertical;
-  overflow: hidden; overflow-wrap: anywhere; }
-.metro .pre, .metro .val, .metro .post, .metro .say, .metro .bar { flex: none; }
-.metro .c1 { -webkit-line-clamp: 1; } .metro .c2 { -webkit-line-clamp: 2; } .metro .c3 { -webkit-line-clamp: 3; }
-.metro .c4 { -webkit-line-clamp: 4; } .metro .c5 { -webkit-line-clamp: 5; } .metro .c6 { -webkit-line-clamp: 6; }
-.metro .c7 { -webkit-line-clamp: 7; } .metro .c8 { -webkit-line-clamp: 8; } .metro .c9 { -webkit-line-clamp: 9; }
-.metro .pre { margin-bottom: auto; font-size: var(--cap); font-weight: 400; line-height: 1.22; }
-.metro .post { margin-top: calc(var(--u) * .03); font-size: var(--cap); font-weight: 400; line-height: 1.22; }
-.metro .val { font-weight: 200; font-size: calc(var(--u) * .36); line-height: 1.02; letter-spacing: -.02em;
-  white-space: nowrap; font-variant-numeric: tabular-nums; }
-.metro .val.v2 { font-size: calc(var(--u) * .28); }
-.metro .val.v3 { font-size: calc(var(--u) * .22); font-weight: 300; letter-spacing: 0; }
-.metro .val.long { font-size: calc(var(--u) * .17); font-weight: 300; letter-spacing: 0; line-height: 1.1;
-  white-space: normal; -webkit-line-clamp: 2; }
-.metro .wide .val.long { font-size: calc(var(--u) * .2); }
-.metro .large .pre { font-size: clamp(14px, calc(var(--u) * .147), 22px); font-weight: 300; line-height: 1.2; }
-.metro .large .val { font-size: calc(var(--u) * .78); line-height: 1; letter-spacing: -.035em; }
-.metro .large .val.v2 { font-size: calc(var(--u) * .56); }
-.metro .large .val.v3 { font-size: calc(var(--u) * .42); font-weight: 200; letter-spacing: -.02em; }
-.metro .large .val.long { font-size: calc(var(--u) * .26); line-height: 1.1; letter-spacing: 0; -webkit-line-clamp: 3; }
-.metro .large .post { margin-top: calc(var(--u) * .05); font-size: clamp(12.5px, calc(var(--u) * .127), 19px);
-  font-weight: 300; line-height: 1.25; }
-.metro .say { font-size: clamp(13px, calc(var(--u) * .135), 20px); font-weight: 300; line-height: 1.3; }
-.metro .say span { display: block; }
-.metro .say span + span { margin-top: .3em; }
-.metro .bar { height: calc(var(--u) * .04); background: rgba(255,255,255,.28); margin-top: calc(var(--u) * .06); }
-.metro .bar i { display: block; height: 100%; background: #fff; }
-/* today's tile: a white top edge. Colour is taken by meaning, so "today" is said without one */
-.metro .tile.today::before { content: ""; position: absolute; left: 0; right: 0; top: 0; z-index: 2;
-  height: calc(var(--u) * .05); background: #fff; pointer-events: none; }
-.metro .tile.today .pre { font-weight: 600; padding-top: calc(var(--u) * .03); }
-/* a verdict is never colour alone: its sign (check, !, cross, ?) sits in the face's top right corner */
-.metro .sign { position: absolute; top: calc(var(--u) * .075); right: calc(var(--u) * .09); font-style: normal; font-weight: 600;
-  font-size: var(--cap); line-height: 1.22; }
-.metro .large .sign { top: calc(var(--u) * .11); right: calc(var(--u) * .12); font-size: clamp(14px, calc(var(--u) * .147), 22px); line-height: 1.2; }
-.metro .sign + .pre { padding-right: 1.5em; }
-/* live tiles: two faces back to back on a card that turns over, then turns back */
-.metro .flip { position: absolute; inset: 0; transform-style: preserve-3d;
-  animation: metro-flip var(--t, 20s) cubic-bezier(.45,0,.2,1) var(--d, 3s) infinite; }
-.metro .live .face { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
-.metro .live .front { transform: rotateX(0deg); }
-.metro .live .back { transform: rotateX(180deg); }
-.metro .tile:hover .flip { animation-play-state: paused; }
-@keyframes metro-in { from { opacity: 0; transform: translateX(46px); } to { opacity: 1; transform: none; } }
-@keyframes metro-flip { 0%, 46% { transform: rotateX(0deg); } 50%, 96% { transform: rotateX(180deg); }
-  100% { transform: rotateX(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .metro .tile { animation: none; transition: none; }
-  .metro .flip { animation: none; }
-}
-@container (max-width: 935px) { .metro .groups { --u: clamp(96px, calc((100cqw - 24px) / 4), 150px); } }
-@container (max-width: 430px) {
-  .metro .groups { --u: calc((100cqw - 8px) / 2); }
-  .metro .grid { grid-template-columns: repeat(2, var(--u)); }
-  .metro h1 { font-size: 44px; }
-}
-</style>
-"""
-
 #: Seconds for a full front-back-front cycle; consecutive live tiles take different ones.
 FLIP_PERIODS = (17, 23, 15, 25, 20)
 
@@ -976,7 +886,7 @@ def _face_html(face: Tile, size: str, cls: str = "", style: str = "") -> str:
 
 
 def groups_html(groups: list[Group], links: dict[str, str] | None = None) -> str:
-    """The tile groups as markup, without the page's CSS or title (the web app brings its own).
+    """The tile groups as markup, without CSS or a page title (the web app brings both).
 
     `links` maps a group title to a URL: that group's heading and tiles then link there.
     """
@@ -1008,16 +918,3 @@ def groups_html(groups: list[Group], links: dict[str, str] | None = None) -> str
         out.append("</div></section>")
     out.append("</div>")
     return "".join(out)
-
-
-def render_html(groups: list[Group], title: str, subtitle: str) -> str:
-    top = f'<div class="metro"><div class="top"><h1>{escape(title)}</h1><div class="asof">{escape(subtitle)}</div></div>'
-    return CSS + top + groups_html(groups) + "</div>"
-
-
-def build_page_html(cfg: Config, df: pd.DataFrame, today: date) -> str:
-    """Everything the Tiles page shows, as one HTML string. app.py calls only this."""
-    data = gather(cfg, df, today)
-    a = data.metrics.day_counts.a  # the last day the data covers
-    stamp = "as of" if data.behind == 0 else "data through"
-    return render_html(build_groups(data), "Dining", f"{stamp} {a:%A, %b} {a.day}")

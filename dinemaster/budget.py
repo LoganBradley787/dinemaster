@@ -1,9 +1,9 @@
 """Daily meal plan and dining-dollar spend-down: how to use up what is left by semester end.
 
 Pure functions over `Config`, the two balances, and the weekday profile from
-`dinemaster.forecast.weekday_profile`; no Streamlit, no file access, no ledger needed.
+`dinemaster.forecast.weekday_profile`; no page code, no file access, no ledger needed.
 
-Typical call (what the dashboard and tiles do):
+Typical call (what the pages and tiles do):
 
     o = freshness.observed_through(cfg, df)
     left = metrics.balances(df, dataclasses.replace(cfg, as_of=o))
@@ -351,8 +351,8 @@ class SpendDown:
         meals_per_day: `(me_left + dd_meals) / R` — exchanges and dining-dollar meals together.
         dd_unallocated: dollars left over after those whole meals (`dd_for_meals` minus their
             cost) — the slack that is neither a planned meal nor reserved for snacks.
-        sentence: the advice in plain English, always displayable (contains "$" amounts in
-            some cases — escape before putting it in Streamlit markdown).
+        sentence: the advice in plain English, always displayable (plain text; it can
+            contain "$" amounts).
         reason: None normally. When `usable_days` is 0 it says why ("the semester is over ...",
             or every remaining day is an away day) and every numeric field from `snack_reserve`
             to `dd_unallocated` is None.

@@ -135,7 +135,7 @@ THEMES: dict[str, dict] = {
     },
 }
 DEFAULT_THEME = "dark"  # used when the browser states no preference
-BG = THEMES["dark"]["bg"]  # the old Streamlit page (tiles.CSS) is dark only
+BG = THEMES["dark"]["bg"]  # the dark theme's page background
 
 
 def _rgb(color: str) -> tuple[int, int, int]:

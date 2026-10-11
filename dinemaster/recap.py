@@ -1,7 +1,7 @@
 """Weekly recap: what one Monday-to-Sunday week of dining looked like, in numbers and sentences.
 
 Pure functions over the ingest DataFrame (`dinemaster.ingest.load_transactions`) and a `Config`.
-No Streamlit, no file writes.
+No page code, no file writes.
 
 Vocabulary (all `datetime.date`):
     S, E    semester start / end (inclusive).

@@ -1,7 +1,7 @@
 """Generate a made-up dining history so you can try DineMaster without your own exports.
 
     uv run python demo/make_demo.py
-    DINEMASTER_CONFIG=demo/config.toml uv run streamlit run app.py
+    DINEMASTER_CONFIG=demo/config.toml uv run python -m dinemaster
 
 Everything it writes (demo/config.toml, demo/raw-data/, demo/calendar/) is fictional and
 dated relative to today, so the demo always looks like a semester about six weeks in.
@@ -216,7 +216,7 @@ def main() -> None:
         )
     )
     print(f"Demo semester {start} to {end} written to {HERE}")
-    print("Run it with:  DINEMASTER_CONFIG=demo/config.toml uv run streamlit run app.py")
+    print("Run it with:  DINEMASTER_CONFIG=demo/config.toml uv run python -m dinemaster")
 
 
 if __name__ == "__main__":

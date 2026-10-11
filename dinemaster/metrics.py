@@ -1,6 +1,6 @@
 """Pure metric computations over an ingested transactions DataFrame + Config.
 
-No Streamlit imports; nothing here reads or writes files. Every function takes
+No web framework imports; nothing here reads or writes files. Every function takes
 a `Config` (see `dinemaster.config.load_config`) and, where relevant, the
 DataFrame produced by `dinemaster.ingest.load_transactions` (columns:
 `account, pot ('ME'|'DD'), timestamp (datetime64), date (datetime.date),

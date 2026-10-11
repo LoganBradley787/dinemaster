@@ -98,11 +98,3 @@
   <p class="sub"><a class="btn" href="{{ ctx.url('/data') }}">Go to data</a></p>
 </header>
 {% endmacro %}
-
-{#- A section that has not been built yet. -#}
-{% macro not_built(name) %}
-<header class="verdict slide">
-  <h1>The {{ name }} page is not built yet.</h1>
-  <p class="sub">The old dashboard still has it. Run <code>uv run streamlit run app.py</code>.</p>
-</header>
-{% endmacro %}

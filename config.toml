@@ -121,7 +121,7 @@ name = "Spring 2026"
 start = 2026-01-12
 end = 2026-05-09
 
-# Plans the school sells, for the "Plan size" tab. Leave out `exchanges` for an unlimited plan.
+# Plans the school sells, for the "plan size" part of the plan page. Leave out `exchanges` for an unlimited plan.
 [[plans]]
 name = "All Access"
 dining_dollars = 150.0

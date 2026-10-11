@@ -1,12 +1,14 @@
-"""Tiles page: what the tiles say, that live tiles flip with CSS only, and that text fits its tile.
+"""Start-screen tiles: what the tiles say, that live tiles flip with CSS only, and that text fits its tile.
 
 All data is synthetic. `raw_dir` points at an empty folder so the observed window comes from the
-last transaction of each pot, never from real export files.
+last transaction of each pot, never from real export files. Markup comes from `groups_html`, which the web app's Start screen
+renders, and styles from the web app's `metro.css`.
 """
 
 import re
 from dataclasses import replace
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -20,6 +22,8 @@ S = date(2026, 8, 21)  # a Friday
 LAST = date(2026, 9, 22)  # a Tuesday: the last day the synthetic data covers
 AS_OF = date(2026, 9, 23)  # a Wednesday
 MON, TUE, WED, THU, FRI, SAT, SUN = range(7)
+#: the stylesheet the Start screen is served with
+WEB_CSS = (Path(T.__file__).parent / "web" / "static" / "metro.css").read_text()
 
 
 def frame(rows):
@@ -222,7 +226,7 @@ def test_no_usage_yet_does_not_crash(cfg):
 
 
 def test_empty_ledger_still_builds_a_page(cfg):
-    html = T.build_page_html(cfg, pd.DataFrame(columns=COLS), AS_OF)
+    html = T.groups_html(T.build_groups(T.gather(cfg, pd.DataFrame(columns=COLS), AS_OF)))
     assert "nothing to project from" in html
 
 
@@ -356,12 +360,12 @@ def test_calendar_tiles(cfg):
 
 def test_render_escapes_text(cfg):
     groups, _ = page(cfg, [swipe(d, place="<b>Hall</b>") for d in days()])
-    html = T.render_html(groups, "Dining", "as of today")
+    html = T.groups_html(groups)
     assert "<b>Hall</b>" not in html and "&lt;b&gt;Hall&lt;/b&gt;" in html
 
 
 def test_live_tiles_flip_with_css_only(cfg):
-    html = T.build_page_html(cfg, frame(steady_rows()), AS_OF)
+    html = T.groups_html(T.build_groups(T.gather(cfg, frame(steady_rows()), AS_OF)))
     assert "<script" not in html.lower()
     live = re.findall(r'<div class="tile \w+ live(?: today)?" style="([^"]*)"><div class="flip"><div class="face front" data-kind="\w+"', html)
     assert len(live) >= 8
@@ -370,21 +374,21 @@ def test_live_tiles_flip_with_css_only(cfg):
     timings = [(re.search(r"--t:(\d+)s", s).group(1), re.search(r"--d:([\d.]+)s", s).group(1)) for s in live]
     assert len(set(timings)) == len(timings)
     assert all(a[0] != b[0] and a[1] != b[1] for a, b in zip(timings, timings[1:]))
-    assert "@keyframes metro-flip" in T.CSS
-    assert ".metro .tile:hover .flip { animation-play-state: paused; }" in T.CSS
-    reduced = T.CSS.split("@media (prefers-reduced-motion: reduce)")[1].split("@container")[0]
+    assert "@keyframes metro-flip" in WEB_CSS
+    assert ".metro .tile:hover .flip { animation-play-state: paused; }" in WEB_CSS
+    reduced = WEB_CSS.split("@media (prefers-reduced-motion: reduce) {\n  .metro .tile")[1].split("@container")[0]
     assert ".metro .flip { animation: none; }" in reduced
 
 
 def test_static_tiles_have_one_face(cfg):
-    html = T.render_html([T.Group("g", [T.Tile("a", "1", "b", T.MEALS)])], "t", "s")
+    html = T.groups_html([T.Group("g", [T.Tile("a", "1", "b", T.MEALS)])])
     assert html.count('class="face"') == 1 and 'class="flip"' not in html
     assert '<div class="tile sq" data-kind="meals" style="background:#2672EC;--i:0">' in html
 
 
 def test_post_line_breaks_and_sentences_render(cfg):
     front = T.Tile("p", "", "", T.MEALS, "large", lines=("One.", "Two & three."), back=T.Tile("p", "5", "a\nb <c>", T.PROBLEM))
-    html = T.render_html([T.Group("g", [front])], "t", "s")
+    html = T.groups_html([T.Group("g", [front])])
     assert "<span>One.</span><span>Two &amp; three.</span>" in html
     assert "a<br>b &lt;c&gt;" in html
     assert "background:#E51400" in html  # the back face keeps its own colour
@@ -615,7 +619,7 @@ def test_rendered_tiles_use_only_palette_fills(scenarios):
 def test_today_is_marked_without_a_colour(scenarios):
     html = T.groups_html(scenarios["going unused"][0])
     assert html.count(" today\"") == 1 and re.search(r'class="tile sq live today"', html)
-    assert ".metro .tile.today::before" in T.CSS
+    assert ".metro .tile.today::before" in WEB_CSS
 
 
 def test_a_date_is_never_split_across_lines(scenarios):

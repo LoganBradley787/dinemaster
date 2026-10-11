@@ -18,9 +18,6 @@ from dinemaster.web.sections import SECTIONS
 from conftest import AS_OF, COVERED_THROUGH
 
 STATIC = Path(settings.__file__).parent / "static"
-# A section is still a stub while its template carries the "not built yet" line; building one removes it.
-TEMPLATES = Path(settings.__file__).parent / "templates"
-STUBS = [s.slug for s in SECTIONS if "is not built yet." in (TEMPLATES / f"{s.slug}.html").read_text()]
 
 
 def hrefs(html: str) -> list[str]:
@@ -42,19 +39,13 @@ def test_sections_are_the_seven_in_the_spec():
     assert [s.slug for s in SECTIONS] == ["now", "forecast", "plan", "habits", "compare", "math", "data"]
 
 
-@pytest.mark.parametrize("slug", STUBS)
-def test_unbuilt_sections_say_so(client, slug):
-    assert f"The {slug} page is not built yet." in client.get(f"/{slug}").text
-
-
 def test_unknown_page_is_404(client):
     assert client.get("/nope").status_code == 404
 
 
-def test_static_files_are_served_and_free_of_streamlit(client):
+def test_static_files_are_served(client):
     css = client.get("/static/metro.css")
     assert css.status_code == 200 and "@keyframes metro-flip" in css.text and "prefers-reduced-motion" in css.text
-    assert "stApp" not in css.text and "data-testid" not in css.text
     assert client.get("/static/app.js").status_code == 200
 
 

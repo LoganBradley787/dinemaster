@@ -208,7 +208,7 @@ main.swapped .slide { animation: none; }
   .stat .figure { font-size: clamp(40px, 12.5vw, 54px); }
 }
 
-/* ---- Start-screen tiles (markup from dinemaster/tiles.py; keep in step with tiles.CSS until the Streamlit page is gone) ---- */
+/* ---- Start-screen tiles (markup from dinemaster/tiles.py) ---- */
 .metro { container-type: inline-size; color: var(--ink); }
 /* tile unit sized so two 4-column groups sit side by side when the page is wide enough */
 .metro .groups { --u: clamp(104px, calc((100cqw - 56px - 48px) / 8), 150px);

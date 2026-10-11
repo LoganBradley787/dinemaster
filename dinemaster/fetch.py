@@ -2,7 +2,7 @@
 
 The site sits behind single sign-on, so a person has to log in; everything after that is
 automatic. The browser keeps its profile next to the ledger, so later runs often skip the login.
-Streamlit runs this as a subprocess (`python -m dinemaster.fetch`); it prints one line per file.
+The data page runs this as a subprocess (`python -m dinemaster.fetch`); it prints one line per file.
 """
 
 from __future__ import annotations

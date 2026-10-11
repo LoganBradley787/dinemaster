@@ -1,4 +1,4 @@
-"""Tests for dinemaster.forecast / forecast_charts — written before the implementation.
+"""Tests for dinemaster.forecast — written before the implementation.
 
 All data is synthetic and hand-built (same row shape as the ingest public API). The observed
 window is controlled either by the last transaction date (empty raw dir) or by `cover()`,
@@ -12,11 +12,9 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 
 import pandas as pd
-import plotly.graph_objects as go
 import pytest
 
 from dinemaster import forecast as fc
-from dinemaster import forecast_charts as fcc
 from dinemaster.config import AwayPeriod, ForecastConfig, PotRule, load_config
 
 COLUMNS = ["account", "pot", "timestamp", "date", "description", "amount", "balance", "kind", "dd_class"]
@@ -541,61 +539,6 @@ def test_zero_simulations_or_half_life_do_not_crash(tmp_path):
     df = me_history(varied)
     f = fc.forecast(df, make_cfg(tmp_path, forecast=dict(simulations=0, half_life_days=0.0, prior_days=0.0)))
     assert f.me.available and f.simulations >= 1
-
-
-# ---------------------------------------------------------------------------
-# charts
-# ---------------------------------------------------------------------------
-
-
-def test_weekday_profile_chart(tmp_path):
-    rows: list[dict] = []
-    for d in days(S, FOUR_WEEKS):
-        rows += swipes(d, varied(d))
-        rows.append(dd(d, 10.0, "meal"))
-    profile = fc.weekday_profile(make_df(rows), make_cfg(tmp_path))
-    fig = fcc.weekday_profile_chart(profile)
-    assert isinstance(fig, go.Figure)
-    bars = [t for t in fig.data if isinstance(t, go.Bar)]
-    assert [b.name for b in bars] == ["ME swipes", "DD meals"]
-    assert fig.layout.barmode == "stack"
-    assert list(bars[0].x) == ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-    assert list(bars[0].y) == pytest.approx(list(profile["me_avg"]))
-    assert "days" in bars[0].hovertemplate  # observed-day counts in hover
-    dollars = [t for t in fig.data if isinstance(t, go.Scatter) and "$" in t.name]
-    assert len(dollars) == 1
-    assert list(dollars[0].y) == pytest.approx(list(profile["dd_spend_avg"]))
-
-
-def test_weekday_profile_chart_empty(tmp_path):
-    profile = fc.weekday_profile(pd.DataFrame(columns=COLUMNS), make_cfg(tmp_path))
-    assert isinstance(fcc.weekday_profile_chart(profile), go.Figure)
-    assert isinstance(fcc.weekday_profile_chart(pd.DataFrame()), go.Figure)
-
-
-def test_forecast_chart(tmp_path):
-    cfg = make_cfg(tmp_path, away_periods=(THANKSGIVING,))
-    df = me_history(varied)
-    f = fc.forecast(df, cfg)
-    actual = pd.Series([160.0 - i for i in range(28)], index=days(S, FOUR_WEEKS))
-    fig = fcc.forecast_chart(f.me, actual, cfg, "Meal exchanges", "meals")
-    assert isinstance(fig, go.Figure)
-    names = [t.name for t in fig.data]
-    assert "actual" in names and "expected" in names
-    assert any("range" in (n or "") for n in names)
-    assert fig.layout.title.text == "Meal exchanges"
-    assert len(fig.layout.shapes) >= 3  # data-through line, semester-end line, away shading
-    expected = next(t for t in fig.data if t.name == "expected")
-    assert list(expected.y) == pytest.approx(list(f.me.expected.values))
-
-
-def test_forecast_chart_without_a_forecast(tmp_path):
-    cfg = make_cfg(tmp_path)
-    f = fc.forecast(pd.DataFrame(columns=COLUMNS), cfg)
-    fig = fcc.forecast_chart(f.dd, pd.Series(dtype=float), cfg, "Dining dollars", "$")
-    assert isinstance(fig, go.Figure)
-    fig = fcc.forecast_chart(f.dd, None, cfg, "Dining dollars", "$")
-    assert isinstance(fig, go.Figure)
 
 
 # ---------------------------------------------------------------------------

@@ -6,21 +6,6 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": [
         "run",
-        "streamlit",
-        "run",
-        "app.py",
-        "--server.headless",
-        "true",
-        "--server.port",
-        "8501"
-      ],
-      "port": 8501
-    },
-    {
-      "name": "metro",
-      "runtimeExecutable": "uv",
-      "runtimeArgs": [
-        "run",
         "python",
         "-m",
         "dinemaster",
