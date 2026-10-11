@@ -75,9 +75,10 @@ def test_fit_cuts_long_text_with_an_ellipsis():
 
 def test_tint_moves_a_colour_toward_white():
     light = kit.tint(kit.DOLLARS, 0.5)
-    assert light == "#80D4D4" and kit.tint(kit.DOLLARS, 0) == kit.DOLLARS.upper()
+    assert light == "color-mix(in srgb, var(--dollars-mark), var(--mix-up) 50%)" and kit.tint(kit.DOLLARS, 0) == kit.DOLLARS
     assert light.meaning is kit.Meaning.DOLLARS  # a tint keeps what the colour means
-    assert kit.tint(kit.MEALS, -1) == "#000000"  # a negative amount goes toward black
+    assert light.resolve("dark") == "#80D4D4" and light.resolve("light") == "#004A4A"  # away from the ground in both themes
+    assert kit.tint(kit.MEALS, -1).resolve("dark") == "#000000" and kit.tint(kit.MEALS, -1).resolve("light") == "#FFFFFF"
 
 
 def test_text_is_escaped():

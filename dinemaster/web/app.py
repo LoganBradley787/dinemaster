@@ -40,9 +40,27 @@ def _static_url(name: str) -> str:
     return f"/static/{name}?v={int(path.stat().st_mtime)}" if path.exists() else f"/static/{name}"
 
 
-def chrome(ctx: PageContext, path: str) -> dict:
-    """What the top bar says at the right: the as-of chip and how fresh the data is."""
+THEME_COOKIE = "theme"
+THEME_COOKIE_AGE = 60 * 60 * 24 * 400  # about as long as a browser keeps one
+
+
+def chosen_theme(request: Request) -> tuple[str | None, bool]:
+    """(theme, came from the URL). `?theme=light|dark` wins and is then remembered in a cookie;
+    otherwise the cookie; otherwise None, and the browser's own light or dark setting decides."""
+    asked = request.query_params.get("theme")
+    if asked in palette.THEMES:
+        return asked, True
+    kept = request.cookies.get(THEME_COOKIE)
+    return (kept if kept in palette.THEMES else None), False
+
+
+def chrome(ctx: PageContext, path: str, query: dict[str, str] | None = None) -> dict:
+    """What the top bar says at the right: the as-of chip, how fresh the data is, and the theme switch.
+
+    `query` is the page's own query values (a section's `unit=meals`), kept by the theme links.
+    """
     cfg, p = ctx.cfg, ctx.params
+    own = {k: v for k, v in (query or {}).items() if k not in ("as_of", "away", "theme")}
     parts = []
     if p.as_of is not None and p.as_of != ctx.today:
         parts.append(f"viewing {fmt.day(cfg.as_of)}")
@@ -60,6 +78,7 @@ def chrome(ctx: PageContext, path: str) -> dict:
         "reset": path,
         "fresh": fresh,
         "old": old,
+        "themes": [(name, ctx.url(path, **own, theme=name)) for name in ("light", "dark")],
     }
 
 
@@ -86,16 +105,21 @@ def create_app(config_path: Path | None = None, today: Callable[[], date] | None
 
     def render(request: Request, ctx: PageContext, template: str, view: dict, section: Section | None = None) -> Response:
         css = f"sections/{section.slug}.css" if section else None
+        theme, asked = chosen_theme(request)
         page = {
             "ctx": ctx,
             "cfg": ctx.cfg,
             "section": section,
             "at_start": template == "start.html",
-            "chrome": chrome(ctx, request.url.path),
+            "chrome": chrome(ctx, request.url.path, dict(request.query_params)),
+            "theme": theme,
             "section_css": css if css and (STATIC / css).exists() else None,
             **view,
         }
-        return templates.TemplateResponse(request, template, page)
+        response = templates.TemplateResponse(request, template, page)
+        if asked:  # remember the choice across pages and visits
+            response.set_cookie(THEME_COOKIE, theme, max_age=THEME_COOKIE_AGE, samesite="lax", path="/")
+        return response
 
     @app.get("/", name="start")
     def start(request: Request) -> Response:

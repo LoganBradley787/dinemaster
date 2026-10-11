@@ -6,7 +6,7 @@
     <span class="key-title">{{ title }}</span>
     <ul>
       {%- for m in meanings %}
-      <li><i style="--c:{{ m | fill }}" data-kind="{{ m.slug }}"></i>{{ m.label }}</li>
+      <li><i style="--c:{{ m | fill }}" data-kind="{{ m.slug }}" data-sign="{{ m.sign }}"></i>{{ m.label }}</li>
       {%- endfor %}
     </ul>
   </div>

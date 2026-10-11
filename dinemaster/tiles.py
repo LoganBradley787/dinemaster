@@ -261,7 +261,7 @@ def _layout(face: Tile, size: str) -> _Layout:
     """Line allowances for a face. Whatever the text, these always fit the tile's height."""
     g = GEOMETRY[size]
     cls = value_class(face.value, size) if face.value else ""
-    pre_need = text_lines(face.pre, g.inner / g.pre_px)
+    pre_need = text_lines(face.pre, _pre_em(face, size))
     bar = 1 if face.bar is not None else 0  # a progress bar takes the room of one caption line
     if size == "large":
         pre = min(2, pre_need)
@@ -276,6 +276,12 @@ def _layout(face: Tile, size: str) -> _Layout:
     return _Layout(cls, pre, max(1, min(3, allowance - pre)), 0)
 
 
+def _pre_em(face: Tile, size: str) -> float:
+    """Width of the top line in em. A face that judges gives up its top right corner to its sign."""
+    g = GEOMETRY[size]
+    return g.inner / g.pre_px - (1.5 if face.kind.judges else 0.0)
+
+
 def problems(tile: Tile) -> list[str]:
     """Why `tile` would not show all of its text at the smallest tile size ([] when it fits).
 
@@ -288,7 +294,7 @@ def problems(tile: Tile) -> list[str]:
             continue
         g, lay = GEOMETRY[tile.size], _layout(face, tile.size)
         label = f"{name} of {tile.size} tile {face.pre!r} / {face.value!r}"
-        pre = text_lines(face.pre, g.inner / g.pre_px)
+        pre = text_lines(face.pre, _pre_em(face, tile.size))
         post = text_lines(face.post, g.inner / g.post_px)
         if face.lines and tile.size != "large":
             out.append(f"{label}: sentences only fit on large tiles")
@@ -900,6 +906,11 @@ CSS = """
 .metro .tile.today::before { content: ""; position: absolute; left: 0; right: 0; top: 0; z-index: 2;
   height: calc(var(--u) * .05); background: #fff; pointer-events: none; }
 .metro .tile.today .pre { font-weight: 600; padding-top: calc(var(--u) * .03); }
+/* a verdict is never colour alone: its sign (check, !, cross, ?) sits in the face's top right corner */
+.metro .sign { position: absolute; top: calc(var(--u) * .075); right: calc(var(--u) * .09); font-style: normal; font-weight: 600;
+  font-size: var(--cap); line-height: 1.22; }
+.metro .large .sign { top: calc(var(--u) * .11); right: calc(var(--u) * .12); font-size: clamp(14px, calc(var(--u) * .147), 22px); line-height: 1.2; }
+.metro .sign + .pre { padding-right: 1.5em; }
 /* live tiles: two faces back to back on a card that turns over, then turns back */
 .metro .flip { position: absolute; inset: 0; transform-style: preserve-3d;
   animation: metro-flip var(--t, 20s) cubic-bezier(.45,0,.2,1) var(--d, 3s) infinite; }
@@ -939,6 +950,8 @@ def _lines_html(text: str) -> str:
 def _face_html(face: Tile, size: str, cls: str = "", style: str = "") -> str:
     lay = _layout(face, size)
     parts = []
+    if face.kind.judges:  # a verdict is never colour alone
+        parts.append(f'<i class="sign" aria-hidden="true">{face.kind.sign}</i>')
     if face.pre and lay.pre:
         parts.append(f'<div class="pre c{lay.pre}">{escape(keep_dates(face.pre))}</div>')
     if face.lines:

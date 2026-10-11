@@ -41,7 +41,7 @@ def test_number_band_carries_the_dashboard_figures(client):
     text = plain(html)
     assert "About 19 meals." in text and "Likely 60 to 71. <1% chance you use them all." in text
     kinds = re.findall(r'<p class="stat" data-kind="(\w+)" style="--c:(#\w+)">', html)
-    assert kinds == [("meals", "#2672EC"), ("dollars", "#008299"), ("days", "#2B5797"), ("look", "#D24726"), ("look", "#D24726")]
+    assert kinds == [("meals", "#2672EC"), ("dollars", "#008299"), ("days", "#2B5797"), ("look", "#AD7A00"), ("look", "#AD7A00")]
     assert "--n:5" in html
 
 
@@ -56,7 +56,7 @@ def test_stale_data_is_called_out(site):
     html = site.client(today=date(2026, 10, 1)).get("/now").text
     text = plain(html)
     assert "Your data is 18 days old. It ends Sep 13. This page describes that day, not today." in text
-    assert 'class="fresh old"' in html and '<li class="problem" style="--c:#E51400">' in html
+    assert 'class="fresh old"' in html and '<li class="problem" data-sign="✕" style="--c:#E51400">' in html
 
 
 def test_balance_charts_show_the_semester_with_today_and_days_away(client):

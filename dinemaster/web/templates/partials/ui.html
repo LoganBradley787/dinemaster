@@ -14,7 +14,7 @@
 {%- if items %}
 <ul class="notes slide" style="--i:1">
   {%- for n in items %}
-  <li class="{{ (n.kind | meaning).slug }}" style="--c:{{ n.kind | fill }}"><span>{{ n.text }}{% if n.href %} <a href="{{ n.href }}">{{ n.link or "More" }}</a>{% endif %}</span></li>
+  <li class="{{ (n.kind | meaning).slug }}" data-sign="{{ (n.kind | meaning).sign }}" style="--c:{{ n.kind | fill }}"><span>{{ n.text }}{% if n.href %} <a href="{{ n.href }}">{{ n.link or "More" }}</a>{% endif %}</span></li>
   {%- endfor %}
 </ul>
 {%- endif %}

@@ -3,13 +3,12 @@
    tables, controls, charts, tooltip, Start-screen tiles. A section may add static/sections/<slug>.css. */
 
 :root {
-  /* --bg and every colour that means something (--meals, --dollars, --days, --places, --good, --look,
-     --problem, --unknown, each with a -mark partner for charts) come from dinemaster/palette.py;
-     base.html inlines them. Write no other colour here: only white, black and their alphas. */
-  --ink: #fff;
-  --dim: rgba(255,255,255,.72);
-  --faint: rgba(255,255,255,.5);
-  --rule: rgba(255,255,255,.14);
+  /* Every colour comes from dinemaster/palette.py (served as /static/palette.css), for both themes:
+     --bg the ground, --ink the text, and the ink at set strengths: --dim --faint (text), --off (pivot),
+     --ref --blank --grid --axis --edge (charts), --rule --wash --soft --hover (rules and fills);
+     --meals --dollars --days --places --good --look --problem --unknown (blocks; -mark for charts);
+     --on-fill is the text on such a block. Write no colour value in this file: only a role variable.
+     The one exception is the Start-screen tiles, whose insides are white on a fill in both themes. */
   --ease: cubic-bezier(.1,.9,.2,1);
   --gutter: clamp(16px, 4vw, 56px);
 }
@@ -20,9 +19,9 @@ body { margin: 0; background: var(--bg); color: var(--ink); overflow-x: hidden;
   font-family: "Segoe UI", "Segoe WP", "Selawik", "Open Sans", "Helvetica Neue", system-ui, sans-serif;
   font-size: 16px; font-weight: 400; line-height: 1.45; -webkit-font-smoothing: antialiased; }
 a { color: inherit; }
-code { font-family: inherit; font-size: inherit; color: #fff; overflow-wrap: anywhere; }
-:focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
-.skip { position: absolute; left: -999px; top: 0; background: #fff; color: var(--bg); padding: 10px 16px; z-index: 20; }
+code { font-family: inherit; font-size: inherit; color: var(--ink); overflow-wrap: anywhere; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+.skip { position: absolute; left: -999px; top: 0; background: var(--ink); color: var(--bg); padding: 10px 16px; z-index: 20; }
 .skip:focus { left: 0; }
 
 /* ---- top bar and pivot ---- */
@@ -30,16 +29,24 @@ code { font-family: inherit; font-size: inherit; color: #fff; overflow-wrap: any
 .appbar-top { display: flex; align-items: center; justify-content: space-between; gap: 8px 24px; flex-wrap: wrap; min-height: 40px; }
 .wordmark { font-size: 15px; font-weight: 600; letter-spacing: .01em; text-decoration: none; display: inline-flex; align-items: center; min-height: 40px; }
 .status { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 14px; font-size: 14px; color: var(--dim); }
-.status .chip.changed { background: var(--look); color: #fff; padding: 5px 10px; }
-.status .reset { color: #fff; display: inline-flex; align-items: center; min-height: 40px; }
-.status .fresh.old { background: var(--problem); color: #fff; padding: 5px 10px; }
+.status .chip.changed { background: var(--look); color: var(--on-fill); padding: 5px 10px; }
+/* the theme switch: two flat links; the one in force is filled. With no choice made, the system setting fills one */
+.theme { display: inline-flex; gap: 2px; }
+.theme a { display: inline-flex; align-items: center; min-height: 32px; padding: 0 10px; background: var(--wash); color: var(--ink);
+  font-size: 13px; text-decoration: none; }
+.theme a:hover { background: var(--soft); }
+.theme a[aria-current] { background: var(--ink); color: var(--bg); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) .theme a[data-theme="dark"] { background: var(--ink); color: var(--bg); } }
+@media (prefers-color-scheme: light) { :root:not([data-theme]) .theme a[data-theme="light"] { background: var(--ink); color: var(--bg); } }
+.status .reset { color: var(--ink); display: inline-flex; align-items: center; min-height: 40px; }
+.status .fresh.old { background: var(--problem); color: var(--on-fill); padding: 5px 10px; }
 .pivot { display: flex; gap: clamp(18px, 2.4vw, 34px); margin: 2px calc(var(--gutter) * -1) 0; padding: 0 var(--gutter) 6px;
   overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .pivot::-webkit-scrollbar { display: none; }
 .pivot a { flex: none; font-size: clamp(32px, 4vw, 50px); font-weight: 200; line-height: 1.15; letter-spacing: -.02em;
-  text-transform: lowercase; text-decoration: none; color: #fff; opacity: .38; padding: 2px 0 4px; }
-.pivot a:hover { opacity: .7; }
-.pivot a[aria-current] { opacity: 1; }
+  text-transform: lowercase; text-decoration: none; color: var(--off); padding: 2px 0 4px; }
+.pivot a:hover { color: var(--dim); }
+.pivot a[aria-current] { color: var(--ink); }
 
 /* ---- page frame ---- */
 main { padding: clamp(20px, 3vw, 36px) var(--gutter) 72px; max-width: 1520px; }
@@ -53,15 +60,16 @@ main { padding: clamp(20px, 3vw, 36px) var(--gutter) 72px; max-width: 1520px; }
 
 /* ---- notes: things to know before trusting the numbers ---- */
 .notes { list-style: none; margin: 22px 0 0; padding: 0; display: grid; gap: 8px; max-width: 62em; }
-.notes li { display: grid; grid-template-columns: 12px 1fr; gap: 12px; font-size: 15px; line-height: 1.4; }
-.notes li::before { content: ""; width: 12px; height: 12px; margin-top: 4px; background: var(--c, #fff); }
+.notes li { display: grid; grid-template-columns: 14px 1fr; gap: 11px; font-size: 15px; line-height: 1.4; }
+.notes li::before { content: attr(data-sign); width: 14px; height: 14px; margin-top: 3px; background: var(--c, var(--ink)); color: var(--on-fill);
+  font-size: 10px; font-weight: 700; line-height: 14px; text-align: center; }
 .notes a { white-space: nowrap; }
 
 /* ---- the number band: big thin numerals, each under a block of its colour ---- */
 .band { display: grid; grid-template-columns: repeat(var(--n, 4), minmax(0, 1fr)); gap: 34px clamp(20px, 3vw, 44px);
   margin: clamp(34px, 4.5vw, 56px) 0 0; padding: 0; }
 .stat { margin: 0; min-width: 0; }
-.stat::before { content: ""; display: block; width: 44px; height: 8px; background: var(--c, #fff); margin-bottom: 12px; }
+.stat::before { content: ""; display: block; width: 44px; height: 8px; background: var(--c, var(--ink)); margin-bottom: 12px; }
 .stat .figure { display: block; margin: 0; font-size: clamp(46px, 5.6vw, 84px); font-weight: 200; line-height: .98; letter-spacing: -.035em;
   white-space: nowrap; }
 .stat .label { display: block; margin: 8px 0 0; font-size: 16px; }
@@ -84,56 +92,56 @@ main > .two { margin-top: clamp(48px, 6vw, 80px); }
 /* ---- tables: no boxes, thin rules ---- */
 .table-wrap { overflow-x: auto; }
 table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-numeric: tabular-nums; }
-.t th { padding: 0 20px 9px 0; font-size: 13px; font-weight: 400; line-height: 1.25; color: rgba(255,255,255,.62); text-align: left;
-  vertical-align: bottom; border-bottom: 1px solid rgba(255,255,255,.16); }
-.t td { padding: 10px 20px 10px 0; border-bottom: 1px solid rgba(255,255,255,.12); white-space: nowrap; }
+.t th { padding: 0 20px 9px 0; font-size: 13px; font-weight: 400; line-height: 1.25; color: var(--dim); text-align: left;
+  vertical-align: bottom; border-bottom: 1px solid var(--soft); }
+.t td { padding: 10px 20px 10px 0; border-bottom: 1px solid var(--rule); white-space: nowrap; }
 .t th:last-child, .t td:last-child { padding-right: 0; }
 .t .n { text-align: right; }
 .t td:first-child { white-space: normal; min-width: 9em; }
 
 /* ---- controls: square and flat ---- */
-.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 20px; border: 2px solid #fff;
-  border-radius: 0; background: transparent; color: #fff; font: inherit; font-size: 15px; text-decoration: none; cursor: pointer; }
-.btn:hover { background: rgba(255,255,255,.16); }
-.btn:active { background: #fff; color: var(--bg); }
-.btn.primary { background: #fff; border-color: #fff; color: var(--bg); }
-.btn.primary:hover { background: rgba(255,255,255,.82); border-color: transparent; }
-.btn.primary:active { background: transparent; border-color: #fff; color: #fff; }
+.btn { display: inline-flex; align-items: center; justify-content: center; min-height: 40px; padding: 0 20px; border: 2px solid var(--ink);
+  border-radius: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-decoration: none; cursor: pointer; }
+.btn:hover { background: var(--hover); }
+.btn:active { background: var(--ink); color: var(--bg); }
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+.btn.primary:hover { background: var(--dim); border-color: transparent; }
+.btn.primary:active { background: transparent; border-color: var(--ink); color: var(--ink); }
 
 .seg { display: inline-flex; flex-wrap: wrap; gap: 2px; }
-.seg a, .seg label { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; background: rgba(255,255,255,.13);
+.seg a, .seg label { display: inline-flex; align-items: center; min-height: 40px; padding: 0 16px; background: var(--wash);
   font-size: 15px; text-decoration: none; cursor: pointer; }
-.seg a:hover { background: rgba(255,255,255,.24); }
-.seg a[aria-current] { background: #fff; color: var(--bg); }
+.seg a:hover { background: var(--soft); }
+.seg a[aria-current] { background: var(--ink); color: var(--bg); }
 
 .form { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 22px 36px; max-width: 980px; }
 .field { display: block; min-width: 0; }
 .field > span { display: block; font-size: 13px; color: var(--dim); }
 .field input:not([type=checkbox]):not([type=range]), .field select { display: block; width: 100%; min-height: 40px; padding: 4px 0;
-  border: 0; border-bottom: 2px solid rgba(255,255,255,.5); border-radius: 0; background: transparent; color: #fff; font: inherit;
-  font-size: 18px; font-weight: 300; font-variant-numeric: tabular-nums; color-scheme: dark; -webkit-appearance: none; appearance: none; }
-.field input:hover, .field select:hover { border-bottom-color: #fff; }
-.field input:focus, .field select:focus { outline: 0; border-bottom-color: #fff; background: rgba(255,255,255,.1); }
-.field select option { background: var(--bg); color: #fff; }
+  border: 0; border-bottom: 2px solid var(--axis); border-radius: 0; background: transparent; color: var(--ink); font: inherit;
+  font-size: 18px; font-weight: 300; font-variant-numeric: tabular-nums; -webkit-appearance: none; appearance: none; }
+.field input:hover, .field select:hover { border-bottom-color: var(--ink); }
+.field input:focus, .field select:focus { outline: 0; border-bottom-color: var(--ink); background: var(--wash); }
+.field select option { background: var(--bg); color: var(--ink); }
 .field .hint { display: block; margin-top: 5px; font-size: 13px; color: var(--faint); }
 
 .switch { display: inline-flex; align-items: center; gap: 14px; min-height: 40px; cursor: pointer; font-size: 15px; }
 .switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
-.switch .track { flex: none; position: relative; width: 52px; height: 22px; border: 2px solid #fff; background: transparent; }
-.switch .track::before { content: ""; position: absolute; inset: 2px; background: rgba(255,255,255,.22); }
-.switch .track::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: -4px; width: 14px; background: #fff;
+.switch .track { flex: none; position: relative; width: 52px; height: 22px; border: 2px solid var(--ink); background: transparent; }
+.switch .track::before { content: ""; position: absolute; inset: 2px; background: var(--soft); }
+.switch .track::after { content: ""; position: absolute; top: -4px; bottom: -4px; left: -4px; width: 14px; background: var(--ink);
   box-shadow: 0 0 0 2px var(--bg); }
-.switch input:checked + .track::before { background: #fff; }
+.switch input:checked + .track::before { background: var(--ink); }
 .switch input:checked + .track::after { left: auto; right: -4px; }
-.switch input:focus-visible + .track { outline: 2px solid #fff; outline-offset: 5px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--ink); outline-offset: 5px; }
 
 .slider { display: block; width: 100%; max-width: 520px; height: 40px; margin: 0; background: transparent; cursor: pointer;
   -webkit-appearance: none; appearance: none; }
-.slider::-webkit-slider-runnable-track { height: 8px; background: linear-gradient(#fff, #fff) 0 / var(--fill, 50%) 100% no-repeat rgba(255,255,255,.25); }
-.slider::-moz-range-track { height: 8px; background: rgba(255,255,255,.25); }
-.slider::-moz-range-progress { height: 8px; background: #fff; }
-.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 26px; margin-top: -9px; border: 0; border-radius: 0; background: #fff; }
-.slider::-moz-range-thumb { width: 14px; height: 26px; border: 0; border-radius: 0; background: #fff; }
+.slider::-webkit-slider-runnable-track { height: 8px; background: linear-gradient(var(--ink), var(--ink)) 0 / var(--fill, 50%) 100% no-repeat var(--soft); }
+.slider::-moz-range-track { height: 8px; background: var(--soft); }
+.slider::-moz-range-progress { height: 8px; background: var(--ink); }
+.slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 26px; margin-top: -9px; border: 0; border-radius: 0; background: var(--ink); }
+.slider::-moz-range-thumb { width: 14px; height: 26px; border: 0; border-radius: 0; background: var(--ink); }
 
 /* ---- charts (markup from web/charts/kit.py) ---- */
 .chart { margin: 0; container-type: inline-size; }
@@ -141,25 +149,25 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 .chart .v-s { display: block; }
 @container (min-width: 520px) { .chart .v-s { display: none; } .chart .v-m { display: block; } }
 @container (min-width: 860px) { .chart .v-m { display: none; } .chart .v-l { display: block; } }
-.chart text { fill: rgba(255,255,255,.74); }
-.chart .lbl { fill: #fff; paint-order: stroke; stroke: var(--bg); stroke-width: 3.5px; stroke-linejoin: round; }
+.chart text { fill: var(--dim); }
+.chart .lbl { fill: var(--ink); paint-order: stroke; stroke: var(--bg); stroke-width: 3.5px; stroke-linejoin: round; }
 .chart .lbl.plain { stroke: none; }
-.chart .name { fill: rgba(255,255,255,.9); }
+.chart .name { fill: var(--ink); }
 .chart .empty { font-size: 15px; }
-.chart .grid { stroke: rgba(255,255,255,.12); stroke-width: 1; }
-.chart .base, .chart .tick { stroke: rgba(255,255,255,.4); stroke-width: 1; }
-.chart .leader { stroke: rgba(255,255,255,.4); stroke-width: 1; }
-.chart line.note-today { stroke: #fff; stroke-width: 1.5; }
-.chart line.note-end, .chart line.note-line { stroke: rgba(255,255,255,.55); stroke-width: 1; stroke-dasharray: 2 3; }
-.chart rect.note-away { fill: rgba(255,255,255,.1); }
-.chart rect.note-marker { fill: rgba(255,255,255,.2); }
-.chart line.note-marker { stroke: rgba(255,255,255,.8); stroke-width: 1.5; stroke-dasharray: 1 3; }
+.chart .grid { stroke: var(--grid); stroke-width: 1; }
+.chart .base, .chart .tick { stroke: var(--axis); stroke-width: 1; }
+.chart .leader { stroke: var(--axis); stroke-width: 1; }
+.chart line.note-today { stroke: var(--ink); stroke-width: 1.5; }
+.chart line.note-end, .chart line.note-line { stroke: var(--ref); stroke-width: 1; stroke-dasharray: 2 3; }
+.chart rect.note-away { fill: var(--wash); }
+.chart rect.note-marker { fill: var(--soft); }
+.chart line.note-marker { stroke: var(--edge); stroke-width: 1.5; stroke-dasharray: 1 3; }
 .chart .stripe { fill: var(--bg); opacity: .5; pointer-events: none; }
-.chart .t-today { fill: #fff; font-weight: 600; }
+.chart .t-today { fill: var(--ink); font-weight: 600; }
 .chart .hit { fill: transparent; }
-.chart .hit:hover, .chart .hit.on { fill: rgba(255,255,255,.12); }
-.chart .bar:hover, .chart .bar.on, .chart .cell:hover, .chart .cell.on, .chart .pt:hover, .chart .pt.on { stroke: #fff; stroke-width: 2; }
-.chart .cell.blank { fill: rgba(255,255,255,.06); }
+.chart .hit:hover, .chart .hit.on { fill: var(--hover); }
+.chart .bar:hover, .chart .bar.on, .chart .cell:hover, .chart .cell.on, .chart .pt:hover, .chart .pt.on { stroke: var(--ink); stroke-width: 2; }
+.chart .cell.blank { fill: var(--wash); }
 .legend { list-style: none; display: flex; flex-wrap: wrap; gap: 6px 24px; margin: 0 0 12px; padding: 0; font-size: 14px; color: var(--dim); }
 .legend li { display: inline-flex; align-items: center; gap: 9px; }
 .legend .k { flex: none; width: 22px; height: 0; }
@@ -170,7 +178,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 .legend .k.stripe { width: 12px; height: 12px; background: repeating-linear-gradient(to bottom, var(--c) 0 3.5px, transparent 3.5px 5px); }
 
 /* ---- the one shared tooltip (app.js) ---- */
-#tip { position: fixed; left: 0; top: 0; z-index: 30; max-width: 260px; padding: 8px 12px; background: #fff; color: var(--bg);
+#tip { position: fixed; left: 0; top: 0; z-index: 30; max-width: 260px; padding: 8px 12px; background: var(--ink); color: var(--bg);
   font-size: 14px; line-height: 1.4; white-space: pre-line; pointer-events: none; }
 #tip b { font-weight: 600; }
 
@@ -182,11 +190,11 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 }
 
 /* ---- Start-screen tiles (markup from dinemaster/tiles.py; keep in step with tiles.CSS until the Streamlit page is gone) ---- */
-.metro { container-type: inline-size; color: #fff; }
+.metro { container-type: inline-size; color: var(--ink); }
 /* tile unit sized so two 4-column groups sit side by side when the page is wide enough */
 .metro .groups { --u: clamp(104px, calc((100cqw - 56px - 48px) / 8), 150px);
   display: flex; flex-wrap: wrap; gap: 36px 56px; }
-.metro h2 { font-weight: 300; font-size: 20px; margin: 0 0 10px; padding: 0; color: #fff; opacity: .9; }
+.metro h2 { font-weight: 300; font-size: 20px; margin: 0 0 10px; padding: 0; color: var(--ink); opacity: .9; }
 .metro .grid { display: grid; grid-template-columns: repeat(4, var(--u)); grid-auto-rows: var(--u);
   grid-auto-flow: dense; gap: 8px; }
 /* every size inside a tile follows --u, so a tile looks the same (and fits the same text) at any size */
@@ -230,11 +238,16 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 .metro .say span { display: block; }
 .metro .say span + span { margin-top: .3em; }
 .metro .bar { height: calc(var(--u) * .04); background: rgba(255,255,255,.28); margin-top: calc(var(--u) * .06); }
-.metro .bar i { display: block; height: 100%; background: #fff; }
-/* today's tile: a white top edge. Colour is taken by meaning, so "today" is said without one */
+.metro .bar i { display: block; height: 100%; background: var(--on-fill); }
+/* today's tile: a top edge in the ink colour. Colour is taken by meaning, so "today" is said without one */
 .metro .tile.today::before { content: ""; position: absolute; left: 0; right: 0; top: 0; z-index: 2;
-  height: calc(var(--u) * .05); background: #fff; pointer-events: none; }
+  height: calc(var(--u) * .05); background: var(--ink); pointer-events: none; }
 .metro .tile.today .pre { font-weight: 600; padding-top: calc(var(--u) * .03); }
+/* a verdict is never colour alone: its sign (check, !, cross, ?) sits in the face's top right corner */
+.metro .sign { position: absolute; top: calc(var(--u) * .075); right: calc(var(--u) * .09); font-style: normal; font-weight: 600;
+  font-size: var(--cap); line-height: 1.22; }
+.metro .large .sign { top: calc(var(--u) * .11); right: calc(var(--u) * .12); font-size: clamp(14px, calc(var(--u) * .147), 22px); line-height: 1.2; }
+.metro .sign + .pre { padding-right: 1.5em; }
 /* live tiles: two faces back to back on a card that turns over, then turns back */
 .metro .flip { position: absolute; inset: 0; transform-style: preserve-3d;
   animation: metro-flip var(--t, 20s) cubic-bezier(.45,0,.2,1) var(--d, 3s) infinite; }
@@ -254,10 +267,10 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
   .metro .groups { --u: calc((100cqw - 8px) / 2); }
   .metro .grid { grid-template-columns: repeat(2, var(--u)); }
 }
-.metro .tile { display: block; color: #fff; text-decoration: none; }
+.metro .tile { display: block; color: var(--on-fill); text-decoration: none; }
 .metro h2 a { color: inherit; text-decoration: none; }
 .metro h2 a:hover { text-decoration: underline; text-underline-offset: 4px; }
-.metro a.tile:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.metro a.tile:focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
 
 /* ---- the key: what each colour means, at the bottom of every page (partials/key.html) ---- */
 .key { display: flex; flex-wrap: wrap; gap: 14px clamp(28px, 5vw, 72px); margin: 0; padding: 22px var(--gutter) 40px; max-width: 1520px;
@@ -266,5 +279,7 @@ table.t { width: 100%; border-collapse: collapse; font-size: 15px; font-variant-
 .key-title { flex: none; color: var(--dim); }
 .key ul { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 0; padding: 0; }
 .key li { display: inline-flex; align-items: center; gap: 8px; white-space: nowrap; }
-.key i { flex: none; width: 12px; height: 12px; background: var(--c); }
+.key i { flex: none; width: 14px; height: 14px; background: var(--c); color: var(--on-fill); font-style: normal; font-size: 10px; font-weight: 700;
+  line-height: 14px; text-align: center; }
+.key i::before { content: attr(data-sign); }
 @media (max-width: 480px) { .key-title { flex-basis: 100%; } }

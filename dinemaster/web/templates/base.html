@@ -1,11 +1,11 @@
 {#- The frame every page shares: top bar, pivot, main, tooltip, script. Sections extend this and fill `main`. -#}
 {%- import "partials/ui.html" as ui -%}
 <!doctype html>
-<html lang="en">
+<html lang="en"{% if theme %} data-theme="{{ theme }}"{% endif %}>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
+<meta name="color-scheme" content="{{ theme or "dark light" }}">
 <title>{% block title %}{{ section.title if section else "start" }}{% endblock %} | DineMaster</title>
 <link rel="stylesheet" href="/static/palette.css">
 <link rel="stylesheet" href="{{ static('metro.css') }}">
@@ -27,6 +27,11 @@
       <span class="chip">{{ chrome.as_of }}</span>
       {%- endif %}
       <span class="fresh{% if chrome.old %} old{% endif %}">{{ chrome.fresh }}</span>
+      <nav class="theme" aria-label="Theme">
+        {%- for name, href in chrome.themes %}
+        <a href="{{ href }}" data-theme="{{ name }}"{% if theme == name %} aria-current="true"{% endif %}>{{ name }}</a>
+        {%- endfor %}
+      </nav>
     </div>
   </div>
   <nav class="pivot" aria-label="Sections">

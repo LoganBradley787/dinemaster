@@ -12,12 +12,13 @@ from ...config import Config
 from ...tiles import cents, day, num, plural
 from . import kit
 
-#: Days in a week by how many meals they had: the meals hue, lighter for more; a day without a meal is a faint blank.
+#: Days in a week by how many meals they had: the meals hue, stronger (further from the ground) for more;
+#: a day without a meal is a faint blank.
 MIX = (
     ("0", "no meal", kit.FAINT),
-    ("1", "one meal", kit.tint(kit.MEALS, -0.22)),
-    ("2", "two meals", kit.tint(kit.MEALS, 0.25)),
-    ("3+", "three or more", kit.tint(kit.MEALS, 0.62)),
+    ("1", "one meal", kit.tint(kit.MEALS, -0.12)),
+    ("2", "two meals", kit.tint(kit.MEALS, 0.3)),
+    ("3+", "three or more", kit.tint(kit.MEALS, 0.65)),
 )
 
 
