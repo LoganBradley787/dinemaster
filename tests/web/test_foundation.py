@@ -18,7 +18,9 @@ from dinemaster.web.sections import SECTIONS
 from conftest import AS_OF, COVERED_THROUGH
 
 STATIC = Path(settings.__file__).parent / "static"
-STUBS = ["forecast", "plan", "habits", "compare", "math", "data"]
+# A section is still a stub while its template carries the "not built yet" line; building one removes it.
+TEMPLATES = Path(settings.__file__).parent / "templates"
+STUBS = [s.slug for s in SECTIONS if "is not built yet." in (TEMPLATES / f"{s.slug}.html").read_text()]
 
 
 def hrefs(html: str) -> list[str]:
