@@ -1,0 +1,6 @@
+/* compare: one column of top places per semester, three across when there is room */
+.cmp-places { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 40px clamp(28px, 4vw, 56px); margin-top: 22px; }
+.cmp-places > * { min-width: 0; }
+.cmp-places .chart { margin-top: 12px; }
+.cmp-covers { margin: 0; font-size: 13.5px; color: var(--dim); }
+.part > .cmp-places + .table-wrap { margin-top: 36px; }

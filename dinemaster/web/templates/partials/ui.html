@@ -34,6 +34,20 @@
 </div>
 {% endmacro %}
 
+{#- Smaller figures inside a part: the band's items ({value, label, detail?, kind}) one size down.
+    `label` names the group for screen readers. -#}
+{% macro figures(items, label) %}
+<div class="figures" role="group" aria-label="{{ label }}">
+  {%- for s in items %}
+  <p class="fig" data-kind="{{ (s.kind | meaning).slug }}" style="--c:{{ s.kind | fill }}">
+    <span class="v">{{ s.value }}</span>
+    <span class="l">{{ s.label | dates }}</span>
+    {%- if s.detail %}<span class="d">{{ s.detail | dates }}</span>{% endif %}
+  </p>
+  {%- endfor %}
+</div>
+{% endmacro %}
+
 {#- A table: t = {columns: [(label, is_number), ...], rows: [[cell, ...], ...]}. -#}
 {% macro table(t, label=None) %}
 <div class="table-wrap">
@@ -55,6 +69,12 @@
   <a href="{{ o.href }}"{% if o.on %} aria-current="true"{% endif %}>{{ o.label }}</a>
   {%- endfor %}
 </nav>
+{% endmacro %}
+
+{#- The same choice with a small label above it and an optional hint under it, for a choice that
+    does not belong to one part's heading. Put several in <div class="choices">. -#}
+{% macro choice(label, options, hint=None) %}
+<div class="choice"><span>{{ label }}</span>{{ seg(options, label) }}{% if hint %}<span class="hint">{{ hint }}</span>{% endif %}</div>
 {% endmacro %}
 
 {#- A Metro toggle switch (a checkbox). -#}

@@ -1,4 +1,178 @@
 {% extends "base.html" %}
+
 {% block main %}
-{{ ui.not_built("plan") }}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{{ ui.band(band) }}
+
+<nav class="jump slide" style="--i:2" aria-label="On this page">
+  <span>On this page</span>
+  {%- for label, href in jump %}
+  <a href="{{ href }}">{{ label }}</a>
+  {%- endfor %}
+</nav>
+
+{%- if daily %}
+<section class="part slide" style="--i:3" id="days">
+  <div class="part-head">
+    <h2>the next {{ daily.shown }} days</h2>
+    {{ ui.seg(modes, "Plan with") }}
+  </div>
+  <p class="lead">One block is one meal. {% if daily.info.include_dd %}Exchanges and the meals your dining dollars can buy.{% else %}Exchanges only.{% endif %}</p>
+  <div class="cal" role="table" aria-label="Meals planned for each of the next {{ daily.shown }} days">
+    <div class="cal-row cal-head" role="row">
+      {%- for name in weekday_names %}<span role="columnheader">{{ name }}</span>{% endfor %}
+    </div>
+    {%- for week in daily.weeks %}
+    <div class="cal-row" role="row" aria-label="{{ week.label }}">
+      {%- for c in week.cells %}
+      <div role="cell" class="day{% if not c.planned %} out{% elif c.away %} away{% elif not c.meals %} none{% endif %}{% if c.today %} today{% endif %}">
+        <span class="when">{% if c.is_now %}Today{% else %}<span class="mo{% if c.month %} keep{% endif %}">{{ c.date.strftime("%b") }} </span>{{ c.date.day }}{% endif %}</span>
+        {%- if c.planned and c.away %}
+        <span class="count word">away</span>
+        {%- elif c.planned %}
+        <span class="count">{{ c.meals }}<span class="unit"> {{ "meal" if c.meals == 1 else "meals" }}</span></span>
+        <span class="pips" aria-hidden="true">{% for _ in range(c.meals) %}<i></i>{% endfor %}</span>
+        {%- endif %}
+      </div>
+      {%- endfor %}
+    </div>
+    {%- endfor %}
+  </div>
+</section>
+
+<section class="part slide" style="--i:4" id="weekdays">
+  <h2>by day of the week</h2>
+  <p class="lead">Each remaining day gets a share in proportion to how much you usually eat on that weekday.</p>
+  <div class="two">
+    {{ daily.weekday_chart }}
+    {{ ui.table(daily.weekdays, "The plan by day of the week") }}
+  </div>
+</section>
+{%- endif %}
+
+{%- if exchanges %}
+<section class="part slide" style="--i:5" id="exchanges">
+  <h2>using the exchanges before they expire</h2>
+  <p class="lead">{{ exchanges.lead | dates }}</p>
+  {%- if exchanges.lines %}
+  <ul class="plain">
+    {%- for line in exchanges.lines %}
+    <li>{{ line }}</li>
+    {%- endfor %}
+  </ul>
+  {%- endif %}
+  {%- if exchanges.chart %}
+  <div class="two">
+    {{ exchanges.chart }}
+    {{ ui.table(exchanges.table, "Exchanges unused at each weekly rate") }}
+  </div>
+  {%- endif %}
+  {%- if exchanges.gaps %}
+  <h3 class="sub-head">Where they go unused</h3>
+  <p class="body">{{ exchanges.gaps }}</p>
+  {%- endif %}
+</section>
+{%- endif %}
+
+<section class="part slide" style="--i:6" id="spend-down">
+  <h2>spend-down</h2>
+  <p class="lead">{{ spend.sentence | dates }}</p>
+  {%- if spend.figures %}
+  {{ ui.figures(spend.figures, "The pace that empties both pots") }}
+  {%- endif %}
+  {%- if spend.chart %}
+  <h3 class="sub-head">What the dining dollars are for</h3>
+  <div class="narrow">{{ spend.chart }}</div>
+  {%- endif %}
+  {%- if spend.fine %}<p class="fine">{{ spend.fine | dates }}</p>{% endif %}
+</section>
+
+<section class="part slide" style="--i:7" id="what-if">
+  <h2>what if</h2>
+  <p class="lead">{{ whatif.lead | dates }}</p>
+  <form class="whatif" id="what-if-form" method="get" action="{{ ctx.url('/plan#what-if', as_of=None, away=None) }}">
+    {%- for name, value in whatif.hidden %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {%- endfor %}
+    <label for="rate">Meals a day</label>
+    <input class="slider" id="rate" type="range" name="rate" min="{{ whatif.min | num }}" max="{{ whatif.max | num }}" step="{{ whatif.step }}" value="{{ whatif.rate }}">
+    <output for="rate">{{ whatif.rate_text }}</output>
+    <button class="btn" type="submit">Show</button>
+  </form>
+  <div id="what-if-live" aria-live="polite">
+    {%- if whatif.reason %}<p class="body">{{ whatif.reason }}</p>{% endif %}
+    {{ ui.figures(whatif.figures, "Where " ~ whatif.rate_text ~ " leaves both pots") }}
+    <div class="two">
+      <div>
+        <h3>Exchanges left at every rate</h3>
+        {{ whatif.me_chart }}
+      </div>
+      <div>
+        <h3>Dining dollars left at every rate</h3>
+        {{ whatif.dd_chart }}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="part slide" style="--i:8" id="plan-size">
+  <h2>plan size</h2>
+  {%- if size.reason %}
+  <p class="lead">{{ size.reason }}</p>
+  {%- else %}
+  <p class="lead">{{ size.lead }} {{ size.cheapest }}</p>
+  <div class="narrow">{{ size.chart }}</div>
+  {{ ui.table(size.table, "Each plan the school sells against what you use") }}
+  <p class="fine">{{ size.fine }}</p>
+  {%- endif %}
+</section>
+
+<script>
+// What-if: moving the slider swaps in the new figures and charts without loading the whole page.
+(() => {
+  const form = document.getElementById("what-if-form");
+  const live = document.getElementById("what-if-live");
+  if (!form || !live || !window.fetch || !window.DOMParser) return;
+  const slider = form.elements.rate, out = form.querySelector("output");
+  let latest = 0, timer = 0;
+  form.classList.add("js");
+
+  async function update() {
+    const query = new URLSearchParams(new FormData(form)).toString();
+    const url = `${location.pathname}?${query}`;
+    const mine = ++latest;
+    try {
+      const page = new DOMParser().parseFromString(await (await fetch(url)).text(), "text/html");
+      const next = page.getElementById("what-if-live");
+      if (mine !== latest || !next) return;
+      live.innerHTML = next.innerHTML;
+      history.replaceState(null, "", url);
+      document.querySelectorAll("a[href]").forEach((a) => {
+        const link = new URL(a.href);
+        if (link.origin !== location.origin || link.pathname !== location.pathname) return;
+        link.searchParams.set("rate", slider.value);
+        a.href = link.pathname + link.search + link.hash;
+      });
+    } catch (error) {
+      form.submit();
+    }
+  }
+
+  slider.addEventListener("input", () => {
+    const rate = Number(slider.value);
+    out.textContent = `${rate} ${rate === 1 ? "meal" : "meals"} a day`;
+    clearTimeout(timer);
+    timer = setTimeout(update, 90);
+  });
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    update();
+  });
+})();
+</script>
+{%- endif %}
 {% endblock %}

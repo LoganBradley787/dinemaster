@@ -4,6 +4,7 @@ Routes:
     GET  /                    the Start screen (tiles)
     GET  /<slug>              a section: `pages/<slug>.build(ctx, request)` -> `templates/<slug>.html`
     POST /<slug>[/<action>]   `pages/<slug>.post(ctx, request, action, form)` -> a URL to redirect to
+    GET  /data/fetch-status   JSON: how the data page's background fetch is going
     GET  /kit                 every component and chart-kit mark on one page (a reference for building sections)
     GET  /static/palette.css  the colour variables, written from dinemaster/palette.py
     /static/...               metro.css, app.js, sections/<slug>.css
@@ -162,6 +163,13 @@ def create_app(config_path: Path | None = None, today: Callable[[], date] | None
         app.add_api_route(section.path, show, methods=["GET"], name=section.slug)
         app.add_api_route(section.path, act, methods=["POST"], name=f"{section.slug}_post")
         app.add_api_route(section.path + "/{action}", act, methods=["POST"], name=f"{section.slug}_action")
+
+    @app.get("/data/fetch-status", name="fetch_status")
+    def fetch_status() -> dict:
+        """How the background fetch started on the data page is going (the page polls this)."""
+        from .pages import data
+
+        return data.FETCH.status()
 
     for section in SECTIONS:
         add_section(section)

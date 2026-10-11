@@ -1,0 +1,15 @@
+/* The habits section: the week picker and the recap sentences. */
+main > .lead { margin-top: 28px; }
+
+.week-pick { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 14px 18px; margin-top: 22px; }
+.week-pick .field { flex: 0 1 280px; }
+.week-pick[data-auto] > button { display: none; }
+.week-step { display: inline-flex; gap: 2px; }
+.week-step .btn { border-color: transparent; background: var(--wash); }
+.week-step a.btn:hover { background: var(--soft); }
+.week-step .btn.off { color: var(--faint); cursor: default; }
+
+.recap-body { margin-top: 28px; align-items: start; }
+.recap-first { margin: 0; font-size: clamp(22px, 2.3vw, 30px); font-weight: 200; line-height: 1.2; letter-spacing: -.01em; max-width: 22em; }
+.recap-lines { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 8px; font-size: 17px; font-weight: 300; }
+.recap-lines li { padding-top: 8px; border-top: 1px solid var(--rule); max-width: 34em; }

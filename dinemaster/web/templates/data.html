@@ -1,4 +1,241 @@
 {% extends "base.html" %}
+{% block head %}
+{%- if running %}<noscript><meta http-equiv="refresh" content="5"></noscript>{% endif %}
+{% endblock %}
 {% block main %}
-{{ ui.not_built("data") }}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{%- if band %}{{ ui.band(band) }}{% endif %}
+
+<section class="part slide" style="--i:3" id="get">
+  <h2>get new data</h2>
+  {%- if can_fetch %}
+  <p class="lead">Get new data opens a browser window on the dining site. Log in there if it asks. Each account's statement is then downloaded into <code>{{ cfg.raw_dir.name }}/</code>.</p>
+  {%- else %}
+  <p class="lead">To add data, put new CSV exports into <code>{{ cfg.raw_dir }}</code>, then press Re-read files.</p>
+  {%- endif %}
+  <div class="actions">
+    {%- if can_fetch %}
+    <form method="post" action="{{ ctx.url('/data/fetch') }}">
+      <button class="btn primary"{% if running %} disabled{% endif %}>{{ "Getting new data" if running else "Get new data" }}</button>
+    </form>
+    {%- endif %}
+    <form method="post" action="{{ ctx.url('/data/reread') }}">
+      <button class="btn" title="Read the files in {{ cfg.raw_dir.name }}/ and your calendars again. Nothing is downloaded.">Re-read files</button>
+    </form>
+  </div>
+  {{ ui.notes(said["get"]) }}
+  <div class="fetch" id="fetch" data-state="{{ fetch.state }}" data-status="/data/fetch-status" aria-live="polite">
+    {%- if running %}
+    <p class="fetch-say">A browser window is open. Log in there if it asks, then wait. This page updates by itself.</p>
+    <div class="progress" role="progressbar" aria-label="Getting new data"><i></i></div>
+    <ul class="fetch-lines">{% for line in fetch.lines %}<li>{{ line }}</li>{% endfor %}</ul>
+    {%- else %}
+    {{ ui.notes(fetch_notes) }}
+    {%- endif %}
+  </div>
+  {%- if accounts %}
+  {{ ui.table(accounts, "The last transaction in each account") }}
+  {%- endif %}
+
+  <details class="more" id="by-hand"{% if by_hand.links or said.by_hand %} open{% endif %}>
+    <summary>Download by hand</summary>
+    {%- if not by_hand.offered %}
+    <p class="fine">Export each account's statement from the dining site as CSV and put the files into <code>{{ cfg.raw_dir }}</code>. To get ready-made links here, list your accounts in the [export] section of config.toml.</p>
+    {%- else %}
+    <form class="by-hand" method="post" action="{{ ctx.url('/data/links') }}" autocomplete="off">
+      {{ ui.field("pasted", "Log in to the dining site, copy the URL of any page, and paste it here", "", type="text", hint="Only used to build the links below. It carries your login session, so it is kept in memory for a few minutes and never saved.") }}
+      <button class="btn">Make the links</button>
+    </form>
+    {{ ui.notes(said.by_hand) }}
+    {%- if by_hand.links %}
+    <ul class="links">
+      {%- for link in by_hand.links %}
+      <li><a class="btn" href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.name }}</a><span>{{ link.range }}</span></li>
+      {%- endfor %}
+    </ul>
+    <p class="fine">Each link opens that account's statement from its last known transaction through today. Export each as CSV and put the files into <code>{{ cfg.raw_dir }}</code>. If a link says you are logged out, the session expired. Paste a fresh URL.</p>
+    {%- endif %}
+    {%- endif %}
+  </details>
+</section>
+
+<section class="part slide" style="--i:4" id="health">
+  <h2>is my data healthy</h2>
+  {%- if health.pots %}
+  <p class="lead">What is left by your plan settings, against the balances the dining site printed in the exports.</p>
+  {{ ui.table(health.pots, "Whether each pot adds up") }}
+  {%- else %}
+  <p class="lead">Nothing to check yet.</p>
+  {%- endif %}
+  <p class="fine">Ledger path: <code>{{ health.ledger }}</code></p>
+
+  <h3 class="sub-head" id="reading">Reading the files</h3>
+  {%- if health.warnings %}
+  {{ ui.notes(health.warnings) }}
+  {%- endif %}
+  {%- if health.files %}
+  <details class="more"{% if health.file_count <= 8 %} open{% endif %}>
+    <summary>{{ health.file_count | plural("file") }} read, {{ health.new_rows | plural("new row") }} this time</summary>
+    {{ ui.table(health.files, "Files read, with new and duplicate rows") }}
+    <p class="fine">A row already in the ledger is counted as a duplicate and is not added twice.</p>
+  </details>
+  {%- else %}
+  <p class="fine">No files ingested yet.</p>
+  {%- endif %}
+
+  <h3 class="sub-head" id="jumps">Balance jumps</h3>
+  <p class="fine">Times when an account's balance on the dining site moved by more or less than the transaction listed, as if the site changed the balance without listing why.</p>
+  {%- if health.jumps %}
+  {{ ui.table(health.jumps, "Balance jumps") }}
+  {%- else %}
+  <p class="fine">None found.</p>
+  {%- endif %}
+
+  {%- if health.late %}
+  <h3 class="sub-head" id="late">Posted late</h3>
+  <p class="fine">Purchases whose balance shows they were charged well after the date they carry. They are counted on the date listed, and the balance check reads them in the order they were charged.</p>
+  {{ ui.table(health.late, "Purchases posted late") }}
+  {%- endif %}
+
+  {%- if health.split %}
+  <h3 class="sub-head" id="split">Dining dollars: meals and snacks</h3>
+  <p class="fine">Of your dining dollars, {{ health.split.sentence }} A purchase of {{ cfg.meal_threshold | cents }} or more counts as a meal, except at the places listed as snack places in config.toml.</p>
+  <div class="two">
+    {{ health.split.chart }}
+    <div>
+      {{ ui.table(health.split.classes, "Dining-dollar purchases counted as meals and as snacks") }}
+      {%- if health.split.places %}
+      {{ ui.table(health.split.places, "Meals and snacks by place") }}
+      {%- endif %}
+    </div>
+  </div>
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:5" id="settings">
+  <h2>settings</h2>
+  <p class="lead">Changes are saved in <code>{{ settings.file }}</code> and apply to every page. config.toml is never changed.</p>
+  {{ ui.notes(said.settings) }}
+  <form class="settings" method="post" action="{{ ctx.url('/data/settings') }}">
+    {%- set v = settings.v %}{% set h = settings.hints %}
+    <fieldset>
+      <legend>Semester</legend>
+      <div class="form">
+        {{ ui.field("semester_start", "Semester start", v.semester_start, type="date", hint=h.semester_start) }}
+        {{ ui.field("semester_end", "Semester end", v.semester_end, type="date", hint=h.semester_end) }}
+        {{ ui.field("data_cutoff", "Ignore data before", v.data_cutoff, type="date", hint=h.data_cutoff) }}
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Plan</legend>
+      <div class="form">
+        {{ ui.field("starting_me", "Starting meal exchanges", v.starting_me, type="number", step="1", hint=h.starting_me) }}
+        {{ ui.field("starting_dd", "Starting dining dollars ($)", v.starting_dd, type="number", step="0.01", hint=h.starting_dd) }}
+        {{ ui.field("meal_price", "Meal price ($)", v.meal_price, type="number", step="0.01", min="0.01", hint=h.meal_price) }}
+      </div>
+      <div class="switches">
+        {{ ui.switch("exclude_away", "Leave out days away when counting days left", v.exclude_away) }}
+        {%- if h.exclude_away %}<span class="hint">{{ h.exclude_away }}</span>{% endif %}
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>Days away</legend>
+      {%- if not settings.away %}
+      <p class="fine">None configured.</p>
+      {%- endif %}
+      {%- for a in settings.away %}
+      <div class="away-row">
+        <div class="away-name">
+          {{ ui.switch("away_enabled_" ~ a.key, a.name, a.enabled) }}
+          {%- if a.from_calendar %}<span class="hint">From your calendar.</span>{% endif %}
+          {%- if a.hint %}<span class="hint">{{ a.hint }}</span>{% endif %}
+        </div>
+        {{ ui.field("away_start_" ~ a.key, "Start", a.start, type="date") }}
+        {{ ui.field("away_end_" ~ a.key, "End", a.end, type="date") }}
+      </div>
+      {%- endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Fine print</legend>
+      <div class="form">
+        {{ ui.field("meal_threshold", "A dining-dollar purchase counts as a meal from ($)", v.meal_threshold, type="number", step="0.01", hint=h.meal_threshold) }}
+        <label class="field"><span>Rounding dining dollars into meals</span>
+          <select name="rounding_mode">
+            {%- for mode in settings.modes %}
+            <option value="{{ mode }}"{% if v.rounding_mode == mode %} selected{% endif %}>{{ mode }}</option>
+            {%- endfor %}
+          </select>
+          {%- if h.rounding_mode %}<span class="hint">{{ h.rounding_mode }}</span>{% endif %}
+        </label>
+        {{ ui.field("rounding_granularity", "Round to the nearest (meals)", v.rounding_granularity, type="number", step="0.01", min="0.01", hint=h.rounding_granularity) }}
+        {{ ui.field("dd_leftover_flag", "Warn when leftover dining dollars pass ($)", v.dd_leftover_flag, type="number", step="0.01", hint=h.dd_leftover_flag) }}
+      </div>
+      <div class="switches">
+        {{ ui.switch("dd_rollover", "Dining dollars roll over to spring", v.dd_rollover) }}
+        {%- if h.dd_rollover %}<span class="hint">{{ h.dd_rollover }}</span>{% endif %}
+      </div>
+    </fieldset>
+    <div class="actions">
+      <button class="btn primary">Save settings</button>
+      <button class="btn" formaction="{{ ctx.url('/data/reset') }}" formnovalidate>Reset to config.toml</button>
+      <span class="fine">{% if settings.changed %}{{ settings.changed | plural("setting") }} {{ "differs" if settings.changed == 1 else "differ" }} from config.toml.{% else %}Everything matches config.toml.{% endif %}</span>
+    </div>
+  </form>
+</section>
+
+<section class="part slide" style="--i:6" id="view">
+  <h2>look at another day</h2>
+  <p class="lead">See the plan as it stood on a past day, or count the days away. These two choices live in the page address and are not saved.</p>
+  <div class="view">
+    <form class="view-date" method="get" action="/data">
+      {%- if view.away_param is not none %}<input type="hidden" name="away" value="{{ view.away_param }}">{% endif %}
+      {{ ui.field("as_of", "As of", view.as_of, type="date", hint="Start and end dates count as full days. Days left are counted from the day after this one.") }}
+      <button class="btn">Show this day</button>
+    </form>
+    {{ ui.choice("Days away, when counting days left", view.away, "Your saved setting is " ~ view.setting ~ ".") }}
+  </div>
+  {%- if view.changed %}
+  <p class="fine"><a class="btn" href="{{ view.reset }}">Back to today and the saved setting</a></p>
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:7" id="calendar">
+  <h2>calendar</h2>
+  {{ ui.notes(calendar.warnings) }}
+  {%- if not calendar.sources %}
+  <p class="lead">No calendars read. Drop .ics files into {% if calendar.folder %}<code>{{ calendar.folder }}</code>{% else %}the folder named by [calendar] ics_dir{% endif %}, or list feed URLs in config.toml. Events named like a break or trip become away periods, and reading days and exams become chart markers.</p>
+  {%- else %}
+  <p class="lead">Read: {{ calendar.sources | join(", ") }}.</p>
+  {%- if calendar.found %}
+  {{ ui.table(calendar.found, "Calendar events that matched") }}
+  {%- else %}
+  <p class="fine">No events matched the away or marker patterns.</p>
+  {%- endif %}
+  {%- endif %}
+</section>
+
+{%- if running %}
+<script>
+// While a fetch runs: ask how it is going every two seconds, show its lines, reload when it ends.
+(() => {
+  const box = document.getElementById("fetch");
+  const list = box.querySelector(".fetch-lines");
+  const ask = async () => {
+    try {
+      const s = await (await fetch(box.dataset.status, { cache: "no-store" })).json();
+      if (s.state !== "running") return location.reload();
+      list.textContent = "";
+      for (const line of s.lines) {
+        const li = document.createElement("li");
+        li.textContent = line;
+        list.append(li);
+      }
+    } catch (e) { /* the server may be busy; ask again */ }
+    setTimeout(ask, 2000);
+  };
+  setTimeout(ask, 2000);
+})();
+</script>
+{%- endif %}
 {% endblock %}

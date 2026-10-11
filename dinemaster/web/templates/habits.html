@@ -1,4 +1,89 @@
 {% extends "base.html" %}
 {% block main %}
-{{ ui.not_built("habits") }}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{%- if streaks %}
+{{ ui.band(streaks) }}
+{%- else %}
+<p class="lead">{{ streaks_empty }}</p>
+{%- endif %}
+
+<section class="part slide" style="--i:3" id="when">
+  <h2>when you eat</h2>
+  <p class="lead">{{ when.lead }}</p>
+  {{ heat }}
+  {%- if when.totals %}
+  <p class="fine">{{ when.totals }} Each square is one hour of one weekday. A stronger blue means more meals, and the number is the count. Empty hours at the start and end of the day are left out. A meal after midnight counts for the evening before.</p>
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:4" id="late-night">
+  <h2>late night</h2>
+  <p class="lead">{{ late.line }}</p>
+  {%- if late.band %}
+  {{ ui.figures(late.band, "Late night in figures") }}
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:5" id="places">
+  <h2>places</h2>
+  <p class="lead">Every visit so far, by place. A visit is one exchange swipe or one dining-dollar purchase.</p>
+  {{ places_chart }}
+  {%- if places %}
+  {{ ui.table(places, "Visits, spending, usual time and favorite day by place") }}
+  {%- endif %}
+</section>
+
+<section class="part slide" style="--i:6" id="recap">
+  <h2>weekly recap</h2>
+  {%- if not recap.weeks %}
+  <p class="lead">{{ recap.empty }}</p>
+  {%- else %}
+  <form class="week-pick" method="get" action="{{ recap.action }}">
+    {%- for name, value in recap.keep.items() %}
+    <input type="hidden" name="{{ name }}" value="{{ value }}">
+    {%- endfor %}
+    <label class="field"><span>Week</span>
+      <select name="week">
+        {%- for o in recap.weeks %}
+        <option value="{{ o.value }}"{% if o.on %} selected{% endif %}>{{ o.label }}</option>
+        {%- endfor %}
+      </select>
+    </label>
+    <button class="btn">Show week</button>
+    <nav class="week-step" aria-label="Step through the weeks">
+      {%- if recap.earlier %}<a class="btn" href="{{ recap.earlier }}">Earlier</a>{% else %}<span class="btn off" aria-disabled="true">Earlier</span>{% endif %}
+      {%- if recap.later %}<a class="btn" href="{{ recap.later }}">Later</a>{% else %}<span class="btn off" aria-disabled="true">Later</span>{% endif %}
+    </nav>
+  </form>
+  {%- if recap.empty %}
+  <p class="lead">{{ recap.empty }}</p>
+  {%- else %}
+  <div class="two recap-body">
+    <div>
+      {%- if recap.first %}<p class="recap-first">{{ recap.first }}</p>{% endif %}
+      <ul class="recap-lines">
+        {%- for line in recap.lines %}
+        <li>{{ line }}</li>
+        {%- endfor %}
+      </ul>
+      <p class="fine">{{ recap.covers }}</p>
+    </div>
+    {{ recap.chart }}
+  </div>
+  {%- endif %}
+  {%- endif %}
+</section>
+<script>
+(function () {
+  var form = document.querySelector(".week-pick");
+  if (!form) return;
+  form.setAttribute("data-auto", "");
+  form.querySelector("select").addEventListener("change", function () { form.submit(); });
+})();
+</script>
+{%- endif %}
 {% endblock %}

@@ -20,6 +20,13 @@
 </section>
 
 <section class="part">
+  <h2>smaller figures and a labelled choice</h2>
+  <p class="lead">Inside a part, figures go one size down. A choice that belongs to no heading gets a small label.</p>
+  {{ ui.figures(band[:3], "Example figures") }}
+  <div class="choices">{{ ui.choice("Show as", seg, "A hint can sit under it.") }}</div>
+</section>
+
+<section class="part">
   <h2>controls</h2>
   <form class="form" method="get" action="/kit">
     {{ ui.field("starting_me", "Starting meal exchanges", "160", type="number", step="1") }}

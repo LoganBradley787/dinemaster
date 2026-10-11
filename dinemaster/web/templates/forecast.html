@@ -1,4 +1,64 @@
 {% extends "base.html" %}
+{% macro facts(items, label) %}
+{%- if items %}
+<dl class="facts" aria-label="{{ label }}">
+  {%- for f in items %}
+  <div>
+    <dt>{{ f.term | dates }}</dt>
+    <dd><span class="amount">{{ f.value | dates }}</span> <span class="more">{{ f.detail | dates }}</span></dd>
+  </div>
+  {%- endfor %}
+</dl>
+{%- endif %}
+{% endmacro %}
 {% block main %}
-{{ ui.not_built("forecast") }}
+{%- if empty %}
+{{ ui.no_data(ctx) }}
+{%- else %}
+{{ ui.verdict(headline, sub) }}
+{{ ui.notes(notes) }}
+{%- if band %}
+{{ ui.band(band) }}
+{%- endif %}
+
+<section class="part slide" style="--i:3" id="meal-exchanges">
+  <h2>where the meal exchanges are headed</h2>
+  <p class="lead">{{ me.lead | dates }}</p>
+  {{ me.chart }}
+  {{ facts(me.facts, "Meal exchanges forecast") }}
+  {%- if me.caveat %}<p class="fine">Note: {{ me.caveat }}</p>{% endif %}
+</section>
+
+<section class="part slide" style="--i:4" id="dining-dollars">
+  <div class="part-head">
+    <h2>where the dining dollars are headed</h2>
+    {%- if dd.units %}{{ ui.seg(dd.units, "Show dining dollars as") }}{% endif %}
+  </div>
+  <p class="lead">{{ dd.lead | dates }}{% if dd.in_meals %} Shown as meals at {{ cfg.meal_price | cents }} each.{% endif %}</p>
+  {{ dd.chart }}
+  {{ facts(dd.facts, "Dining dollars forecast") }}
+  {%- if dd.caveat %}<p class="fine">Note: {{ dd.caveat }}</p>{% endif %}
+  {%- if how %}<p class="fine">{{ how | dates }}</p>{% endif %}
+</section>
+
+<section class="part slide" style="--i:5" id="week">
+  <h2>your week, day by day</h2>
+  {%- if week.none %}<p class="lead">{{ week.none }}</p>{% endif %}
+  {%- if week.line %}<p class="lead">{{ week.line }}</p>{% endif %}
+  <div class="two">
+    <div>
+      <h3>Meals on a typical day</h3>
+      {{ week.meals }}
+    </div>
+    <div>
+      <h3>Dining dollars on a typical day</h3>
+      {{ week.dollars }}
+    </div>
+  </div>
+  {%- if week.table %}
+  {{ ui.table(week.table, "A typical week, day by day") }}
+  {%- endif %}
+  {%- if week.fine %}<p class="fine">{{ week.fine | dates }}</p>{% endif %}
+</section>
+{%- endif %}
 {% endblock %}

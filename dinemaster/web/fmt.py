@@ -13,7 +13,7 @@ from datetime import date
 from ..palette import fill, need_meaning
 from ..tiles import ago, cents, chance, clip, day, keep_dates, money, num, plural, span
 
-__all__ = ["ago", "cents", "chance", "clip", "day", "money", "num", "plural", "span", "signed", "pct", "weekday", "between", "register"]
+__all__ = ["ago", "cents", "chance", "clip", "day", "money", "num", "plural", "span", "signed", "pct", "weekday", "between", "sentences", "register"]
 
 
 def signed(x: float | None, digits: int = 1) -> str:
@@ -40,6 +40,15 @@ def between(lo: float, hi: float, each=lambda x: num(x, 0)) -> str:
     """A range in words: "20 to 31", or just "20" when both ends read the same."""
     a, b = each(lo), each(hi)
     return a if a == b else f"{a} to {b}"
+
+
+def sentences(text: str) -> str:
+    """A sentence from a math module in this app's voice: a long dash becomes a full stop and the
+    next word a capital, a date-range dash becomes "to". "Swipe first — use 11." -> "Swipe first. Use 11."."""
+    first, *rest = str(text).split(" — ")
+    for part in rest:
+        first = first.rstrip(".") + ". " + part[:1].upper() + part[1:]
+    return first.replace("–", " to ").replace("  ", " ")
 
 
 def register(env) -> None:
