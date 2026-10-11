@@ -31,14 +31,13 @@ import pandas as pd
 from . import budget, compare, forecast, habits, recap
 from . import metrics as m
 from .config import Config
-from .freshness import data_through, observed_through
+from .freshness import at_observed, data_through, days_behind, is_stale, observed_through
 
 # Metro palette, darkened where needed so white text stays readable
 BLUE, NAVY, TEAL, GREEN, RED = "#2672EC", "#2B5797", "#008299", "#008A00", "#E51400"
 ORANGE, CRIMSON, PURPLE, VIOLET, MAGENTA, SLATE = "#D24726", "#B91D47", "#7E3878", "#603CBA", "#C1004F", "#525252"
 
-#: A pot counts as safely "on track" when at least this share of simulated semesters still has some left.
-SAFE_CHANCE = 0.9
+SAFE_CHANCE = forecast.SAFE_CHANCE
 
 
 @dataclass(frozen=True)
@@ -68,12 +67,17 @@ class PageData:
     cfg: Config
     df: pd.DataFrame
     today: date  # the real calendar day, for "data is N days old"
-    metrics: m.Metrics
-    daily: pd.DataFrame  # metrics.daily, cut off at the last observed day
+    metrics: m.Metrics  # worked out at the last observed day, so uncovered days are not zero-usage days
+    now: m.DayCounts  # the calendar at the real as-of date: progress, days to go, what is coming up
+    behind: int  # days between the last observed day and the as-of date
+    stale: bool  # the data is too old for "today" advice
+    daily: pd.DataFrame  # metrics.daily through the last observed day
     through: date | None  # last day the exports cover
     forecast: forecast.Forecast
-    plan: pd.DataFrame  # budget.daily_budget from the day after the last observed day
+    plan: pd.DataFrame | None  # budget.daily_budget from today (None when the data is stale)
     spend: budget.SpendDown
+    ladder: budget.Ladder
+    gaps: forecast.SwipeGaps | None
     recaps: list[recap.Recap]  # newest week first, at most two
     streaks: habits.Streaks
     late: habits.LateNight
@@ -292,30 +296,68 @@ def _fit_sentences(lines: list[str], allowance: int = 7) -> tuple[str, ...]:
 
 
 def gather(cfg: Config, df: pd.DataFrame, today: date) -> PageData:
-    """Run every module the page draws on. Usage is only known through the observed day O."""
-    metrics = m.compute_metrics(df, cfg)
+    """Run every module the page draws on. Usage is only known through the observed day O.
+
+    When the data is a few days behind, the plan still starts today: the days in between are
+    assumed to have gone at the usual rate. Past `freshness.STALE_AFTER_DAYS` there is no plan.
+    """
     o = observed_through(cfg, df)
+    at_o = at_observed(cfg, df)
     fc = forecast.forecast(df, cfg)
-    left = m.balances(df, replace(cfg, as_of=o))
-    start = o + timedelta(days=1)
-    daily = m.daily(df, cfg)
+    stale = is_stale(cfg, df)
+    known = o + timedelta(days=1)
+    start = max(known, m.clamp_as_of(cfg))
+    me_left, dd_left = forecast.balances_on(fc, start)
+    expected_unused = float(fc.me.expected.iloc[-1]) if fc.me.available else fc.me.start_balance
     weeks = recap.weeks_available(df, cfg)
     return PageData(
         cfg=cfg,
         df=df,
         today=today,
-        metrics=metrics,
-        daily=daily[[d <= o for d in daily.index]],
+        metrics=m.compute_metrics(df, at_o),
+        now=m.day_counts(cfg),
+        behind=days_behind(cfg, df),
+        stale=stale,
+        daily=m.daily(df, at_o),
         through=data_through(cfg, df),
         forecast=fc,
-        plan=budget.daily_budget(cfg, left.me_left, left.dd_left, fc.profile, start),
-        spend=budget.spend_down(cfg, left.me_left, left.dd_left, fc.profile, start),
+        plan=None if stale else budget.daily_budget(cfg, me_left, dd_left, fc.profile, start, include_dd=not cfg.dd_rollover),
+        spend=budget.spend_down(cfg, fc.me.start_balance, fc.dd.start_balance, fc.profile, known),
+        ladder=budget.rate_ladder(cfg, fc.me.start_balance, expected_unused, known),
+        gaps=forecast.swipe_gaps(df, cfg),
         recaps=[recap.weekly_recap(df, cfg, monday) for monday in reversed(weeks[-2:])],
         streaks=habits.streaks(df, cfg),
         late=habits.late_night(df, cfg),
         places=habits.place_stats(df, cfg),
         summaries=compare.semester_summaries(df, cfg),
     )
+
+
+def run_out_matters(d: PageData) -> bool:
+    """Whether to show the "when will it run out" tiles (`[tiles] run_out` in config.toml).
+
+    "auto" follows the forecast: the tiles come back by themselves once either pot has less
+    than a `SAFE_CHANCE` chance of lasting.
+    """
+    mode = d.cfg.run_out_tiles
+    if mode in ("always", "never"):
+        return mode == "always"
+    return forecast.at_risk(d.forecast.me) or forecast.at_risk(d.forecast.dd)
+
+
+def going_unused(d: PageData) -> bool:
+    return forecast.going_unused(d.cfg, d.forecast.me)
+
+
+def meal_run_out_matters(d: PageData) -> bool:
+    """Whether to show the tiles about making meals last ("you can eat", "two meals every day").
+
+    As `run_out_matters`, except that in "auto" they stay hidden while exchanges are going
+    unused: dining dollars running short is no reason to ration meals then.
+    """
+    if d.cfg.run_out_tiles != "auto":
+        return run_out_matters(d)
+    return run_out_matters(d) and not going_unused(d)
 
 
 # ---------------------------------------------------------------------------
@@ -338,15 +380,19 @@ def _verdict(d: PageData) -> Tile:
 
     odds = chance(f.prob_lasts)
     if f.prob_lasts >= 0.5 or f.runout_p50 is None:
-        color = GREEN if f.prob_lasts >= SAFE_CHANCE else ORANGE
         likely = _between(f.leftover_lo, f.leftover_hi, lambda x: num(x, 0))
-        front = Tile(
-            "On track to have",
-            num(f.leftover_p50, 0),
-            f"extra meal exchanges on {end}\nlikely {likely} · {odds} chance they last",
-            color,
-            "large",
-        )
+        if going_unused(d):  # safe, but that many expire: the loss is the news, not the safety
+            color = ORANGE
+            front = Tile("On pace to leave", num(f.leftover_p50, 0), f"meal exchanges unused on {end}\nlikely {likely}", color, "large")
+        else:
+            color = GREEN if f.prob_lasts >= SAFE_CHANCE else ORANGE
+            front = Tile(
+                "On track to have",
+                num(f.leftover_p50, 0),
+                f"extra meal exchanges on {end}\nlikely {likely} · {odds} chance they last",
+                color,
+                "large",
+            )
     else:
         color = RED
         early = (cfg.semester_end - f.runout_p50).days
@@ -358,9 +404,10 @@ def _verdict(d: PageData) -> Tile:
             "large",
         )
     seen = int(d.forecast.profile.attrs.get("observed_days", 0))
+    unused = going_unused(d)  # then lasting is not in doubt; using them up is
     back = Tile(
-        f"Chance they last to {end}",
-        odds,
+        f"Chance you use them all by {end}" if unused else f"Chance they last to {end}",
+        chance(1 - f.prob_lasts) if unused else odds,
         f"from {plural(seen, 'observed day')} — each day of the week forecast from its own history",
         color,
     )
@@ -370,6 +417,7 @@ def _verdict(d: PageData) -> Tile:
 def _plan_tile(d: PageData) -> Tile | None:
     """Today's share of the daily plan, with the next seven days on the back."""
     plan, ref = d.plan, d.cfg.as_of
+    usual = f" · assuming your usual since {day(observed_through(d.cfg, d.df))}" if d.behind > 1 else ""
     if plan is None or plan.empty or ref > plan.index[-1]:
         return None
 
@@ -389,7 +437,8 @@ def _plan_tile(d: PageData) -> Tile | None:
     now = words(ref)
     nxt = words(ref + timedelta(days=1), noun=now in (None, "away"))  # "3 meals" today reads on as "then 1 tomorrow"
     if now is not None:
-        front = Tile("Today's plan", now, f"then {nxt} tomorrow" if nxt else "the last day of the semester", BLUE, "wide")
+        then = f"then {nxt} tomorrow" if nxt else "the last day of the semester"
+        front = Tile("Today's plan", now, then + usual, BLUE, "wide")
     elif nxt is not None:
         front = Tile("Tomorrow's plan", nxt, "today is already in the data", BLUE, "wide")
     else:
@@ -409,7 +458,7 @@ def _plan_tile(d: PageData) -> Tile | None:
 
 def _calendar_tiles(d: PageData) -> list[Tile]:
     """The next away period and the next calendar marker (reading days, exams)."""
-    cfg, a = d.cfg, d.metrics.day_counts.a
+    cfg, a = d.cfg, d.now.a
     tiles = []
 
     def when(start: date, soon: str, now: str) -> str:
@@ -428,19 +477,26 @@ def _calendar_tiles(d: PageData) -> list[Tile]:
 
 
 def _right_now(d: PageData) -> list[Tile]:
-    cfg, dc, bal = d.cfg, d.metrics.day_counts, d.metrics.balances
+    cfg, dc, bal = d.cfg, d.now, d.metrics.balances
     days_left = dc.dr_away if cfg.exclude_away else dc.dr
     usable = "usable " if cfg.exclude_away and dc.away_rem else ""
-    dd_meals = cfg.round_meals(bal.dd_left / cfg.meal_price) if cfg.meal_price > 0 else 0
-    tiles = [_verdict(d)]
+    if cfg.dd_rollover:  # dollars that carry over are not meals waiting to be eaten
+        dd_note = "dining dollars"
+    else:
+        dd_meals = cfg.round_meals(bal.dd_left / cfg.meal_price) if cfg.meal_price > 0 else 0
+        dd_note = f"dining dollars\n≈ {plural(dd_meals, 'meal')}"
+    tiles = []
+    if d.stale and d.through is not None:
+        tiles.append(Tile("Your data is", f"{d.behind} days old", "get new data before trusting today's numbers", RED, "wide"))
+    tiles.append(_verdict(d))
     plan = _plan_tile(d)
     if plan is not None:
         tiles.append(plan)
     tiles += [
         Tile("", num(bal.me_left, 0), "exchanges left", BLUE),
-        Tile("", money(bal.dd_left), f"dining dollars\n≈ {plural(dd_meals, 'meal')}", TEAL),
-        Tile("", f"{d.metrics.progress * 100:.0f}%", f"of the semester done · {days_left} {usable}days to go", NAVY, "wide",
-             bar=d.metrics.progress),
+        Tile("", money(bal.dd_left), dd_note, TEAL),
+        Tile("", f"{dc.progress * 100:.0f}%", f"of the semester done · {days_left} {usable}days to go", NAVY, "wide",
+             bar=dc.progress),
     ]
     return tiles + _calendar_tiles(d)
 
@@ -450,6 +506,7 @@ def _projections(d: PageData) -> list[Tile]:
     v = "away" if cfg.exclude_away else "plain"
     end = day(cfg.semester_end)
     tiles: list[Tile] = []
+    run_out = run_out_matters(d)
 
     if metrics.balances.dd_used <= 0:
         tiles.append(Tile("Dining dollars", "untouched", "no spending yet to project from", SLATE, "wide"))
@@ -459,15 +516,17 @@ def _projections(d: PageData) -> list[Tile]:
         tiles.append(Tile("Dining dollars", "$0", "all spent", RED, "wide"))
     elif f.prob_lasts >= 0.5 or f.runout_p50 is None:
         likely = _between(f.leftover_lo, f.leftover_hi, money)
-        tiles.append(
-            Tile("Dining dollars will hold", chance(f.prob_lasts), f"chance of lasting · likely {likely} left on {end}",
-                 GREEN if f.prob_lasts >= SAFE_CHANCE else ORANGE, "wide")
-        )
-        if f.leftover_p50 >= cfg.dd_leftover_flag:
+        leftover = f.leftover_p50 >= cfg.dd_leftover_flag
+        if run_out or not leftover:  # with nothing at risk, the leftover tile below says it all
+            tiles.append(
+                Tile("Dining dollars will hold", chance(f.prob_lasts), f"chance of lasting · likely {likely} left on {end}",
+                     GREEN if f.prob_lasts >= SAFE_CHANCE else ORANGE, "wide")
+            )
+        if leftover:
             color = PURPLE if cfg.dd_rollover else ORANGE
-            fate = "carries into spring" if cfg.dd_rollover else "goes unspent — use it or lose it"
+            fate = f"likely {likely} · carries into spring" if cfg.dd_rollover else "goes unspent — use it or lose it"
             back = None
-            if cfg.meal_price > 0 and f.leftover_p50 >= cfg.meal_price:
+            if not cfg.dd_rollover and cfg.meal_price > 0 and f.leftover_p50 >= cfg.meal_price:
                 worth = int(f.leftover_p50 // cfg.meal_price)
                 back = Tile("That is enough for", plural(worth, "meal"), f"at {cents(cfg.meal_price).removesuffix('.00')} each", color)
             tiles.append(Tile(f"Left over on {end}", money(f.leftover_p50), fate, color, "wide", back=back))
@@ -479,7 +538,7 @@ def _projections(d: PageData) -> list[Tile]:
 
     for label, key in (("exchanges only", "me_only"), ("with dining dollars", "with_dd")):
         ro = metrics.run_out[v][key]
-        if ro.date is None:
+        if ro.date is None or not meal_run_out_matters(d) or (key == "with_dd" and cfg.dd_rollover):
             continue
         short = ro.spare_days is not None and ro.spare_days < 0
         tail = f"{num(abs(ro.spare_days), 0)} days {'short' if short else 'spare'}"
@@ -510,26 +569,78 @@ def _spend_tile(d: PageData) -> Tile | None:
     return replace(front, back=Tile(f"Every week until {day(sd.end)}", value, what, ORANGE))
 
 
+def _ladder_tile(d: PageData) -> Tile | None:
+    """What each weekly rate leaves unused, with the rate that uses them all on the back."""
+    ladder = d.ladder
+    lines = budget.ladder_lines(ladder)
+    if not lines:
+        return None
+    front = Tile("To use them all", "", "", ORANGE, "large", lines=_fit_sentences(lines, 8))
+    end = d.spend.end if d.spend.reason is None else d.cfg.semester_end
+    back = Tile(f"Every week until {day(end)}", num(ladder.needed_per_week), f"exchanges uses them all\nyou average {num(ladder.usual_per_week)}", ORANGE)
+    return replace(front, back=back)
+
+
+def _cost_tile(d: PageData) -> Tile | None:
+    """What the exchanges set to expire cost, from the plan price."""
+    each, f = d.cfg.exchange_price, d.forecast.me
+    if not each or f.leftover_p50 is None or f.leftover_p50 < 1:
+        return None
+    unused = round(f.leftover_p50)
+    front = Tile("Unused exchanges cost about", money(unused * each), f"{unused} at {cents(each)} each", ORANGE, "wide")
+    used = d.cfg.starting_me - unused
+    if used <= 0:
+        return front
+    back = Tile("Each meal you do eat costs", cents(each * d.cfg.starting_me / used), f"{cents(each)} if you used every one", ORANGE)
+    return replace(front, back=back)
+
+
+def _gap_tile(d: PageData) -> Tile | None:
+    """Which days of the week go without a swipe."""
+    g = d.gaps
+    if g is None or g.reason is not None:
+        return None
+    front = Tile(
+        "Days with no swipe", f"{g.light_days - g.light_swiped} of {g.light_days}",
+        f"{g.light} days · {g.other_days - g.other_swiped} of {g.other_days} {g.other}", VIOLET, "wide",
+    )
+    back = Tile(f"{g.light}, swipes a day", num(g.light_rate, 2), f"{num(g.other_rate, 2)} on {g.other}", VIOLET)
+    return replace(front, back=back)
+
+
 def _pace(d: PageData) -> list[Tile]:
     cfg, metrics = d.cfg, d.metrics
     v = "away" if cfg.exclude_away else "plain"
     me_burn, dd_burn = metrics.burn[v]["me"], metrics.burn[v]["dd"]
     targets, pace = metrics.targets[v], metrics.pace[v]
+    run_out, unused, pooled = meal_run_out_matters(d), going_unused(d), not cfg.dd_rollover
     tiles: list[Tile] = []
-    spend = _spend_tile(d)
-    if spend is not None:
-        tiles.append(spend)
-    if pace.me_only is not None:
+    if unused:
+        tiles += [t for t in (_ladder_tile(d), _cost_tile(d), _gap_tile(d)) if t is not None]
+    else:
+        spend = _spend_tile(d)
+        if spend is not None:
+            tiles.append(spend)
+    if run_out and pace.me_only is not None:
         tiles.append(Tile("You can eat", num(pace.me_only, 2), "meals a day on exchanges alone", VIOLET, "wide"))
-        tiles.append(Tile("or", num(pace.with_dd, 2), "meals a day counting dining dollars", MAGENTA, "wide"))
-    for delta, label in ((targets.strict_delta, "exchanges only"), (targets.pooled_delta, "counting dining dollars")):
-        if delta is not None:
-            ahead = delta >= 0
-            tiles.append(
-                Tile("Against an even pace", f"{delta:+.1f}", f"meals {'ahead' if ahead else 'behind'} · {label}", GREEN if ahead else RED, "wide")
-            )
-    mix = metrics.day_mix[v]["with_dd"]
-    if mix.two_per_week is not None:
+        if pooled:
+            tiles.append(Tile("or", num(pace.with_dd, 2), "meals a day counting dining dollars", MAGENTA, "wide"))
+    delta = targets.strict_delta
+    if delta is not None and unused and delta > 0:  # being "ahead" is the problem here
+        tiles.append(Tile("Against an even pace", num(delta), "more exchanges left than even use would leave", ORANGE, "wide"))
+    elif delta is not None:
+        ahead = delta >= 0
+        tiles.append(
+            Tile("Against an even pace", f"{delta:+.1f}", f"meals {'ahead' if ahead else 'behind'} · exchanges only", GREEN if ahead else RED, "wide")
+        )
+    if run_out and pooled and targets.pooled_delta is not None:
+        ahead = targets.pooled_delta >= 0
+        tiles.append(
+            Tile("Against an even pace", f"{targets.pooled_delta:+.1f}", f"meals {'ahead' if ahead else 'behind'} · counting dining dollars",
+                 GREEN if ahead else RED, "wide")
+        )
+    mix = metrics.day_mix[v]["with_dd" if pooled else "me_only"]
+    if run_out and mix.two_per_week is not None:
         tiles.append(
             Tile("A week from here looks like", f"{num(mix.two_per_week)} + {num(mix.one_per_week)}", "two-meal days + one-meal days", BLUE, "wide")
         )
@@ -669,7 +780,9 @@ def _compare_tile(d: PageData) -> Tile | None:
 def _habits(d: PageData) -> list[Tile]:
     tiles = [t for t in (_spot_tile(d), _late_tile(d), _streak_tile(d), _compare_tile(d)) if t is not None]
     if not d.daily.empty:
-        tiles.append(Tile("", num(d.daily["meals"].tail(7).sum(), 0), "meals, last 7 days", NAVY))
+        last = d.daily.index[-1]
+        when = "meals, last 7 days" if d.behind == 0 else f"meals, week to {day(last)}"
+        tiles.append(Tile("", num(d.daily["meals"].tail(7).sum(), 0), when, NAVY))
     bd = d.metrics.dd_breakdown
     if bd.snack_count:
         tiles.append(Tile("", money(bd.snack_amount), f"on {plural(bd.snack_count, 'snack')}", ORANGE))
@@ -838,5 +951,6 @@ def render_html(groups: list[Group], title: str, subtitle: str) -> str:
 def build_page_html(cfg: Config, df: pd.DataFrame, today: date) -> str:
     """Everything the Tiles page shows, as one HTML string. app.py calls only this."""
     data = gather(cfg, df, today)
-    a = data.metrics.day_counts.a
-    return render_html(build_groups(data), "Dining", f"as of {a:%A, %b} {a.day}")
+    a = data.metrics.day_counts.a  # the last day the data covers
+    stamp = "as of" if data.behind == 0 else "data through"
+    return render_html(build_groups(data), "Dining", f"{stamp} {a:%A, %b} {a.day}")

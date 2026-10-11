@@ -89,6 +89,16 @@ class SemesterDef:
 
 
 @dataclass(frozen=True)
+class PlanOption:
+    """A plan the school sells, for the plan-size comparison. `exchanges` None means unlimited."""
+
+    name: str
+    exchanges: float | None
+    dining_dollars: float
+    price: float
+
+
+@dataclass(frozen=True)
 class Config:
     semester_start: date
     semester_end: date
@@ -119,6 +129,29 @@ class Config:
     markers: tuple[Marker, ...] = ()  # filled in by calendar_sync.apply_calendar
     habits: HabitsConfig = HabitsConfig()
     history: tuple[SemesterDef, ...] = ()
+    plan_price: float | None = None  # what the plan costs per semester; None = not given
+    plan_dd_in_price: float | None = None  # dining dollars that price pays for (None = starting_dd)
+    run_out_tiles: str = "auto"  # "auto" | "always" | "never"
+    plans: tuple[PlanOption, ...] = ()
+
+    @property
+    def day_rollover_hour(self) -> int:
+        """Hour at which a new "dining day" starts, so a late night is not split at midnight.
+
+        Equal to `habits.late_night_end` when the late-night window ends in the morning (the
+        default 4 means 00:00-03:59 belongs to the previous evening); 0 (plain calendar days)
+        when the window ends after noon.
+        """
+        end = int(self.habits.late_night_end) % 24
+        return end if end <= 12 else 0
+
+    @property
+    def exchange_price(self) -> float | None:
+        """What one meal exchange costs: the plan price less its dining dollars, per exchange."""
+        if self.plan_price is None or self.starting_me <= 0:
+            return None
+        dollars = self.starting_dd if self.plan_dd_in_price is None else self.plan_dd_in_price
+        return max(0.0, self.plan_price - dollars) / self.starting_me
 
     def round_meals(self, x: float) -> float:
         """Convert a fractional meal count to whole units of `rounding_granularity` using `rounding_mode`."""
@@ -195,4 +228,16 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
         ),
         habits=HabitsConfig(int(hab.get("late_night_start", 21)), int(hab.get("late_night_end", 4))),
         history=tuple(SemesterDef(h["name"], h["start"], h["end"]) for h in c.get("history", {}).get("semesters", [])),
+        plan_price=float(plan["price"]) if "price" in plan else None,
+        plan_dd_in_price=float(plan["dd_in_price"]) if "dd_in_price" in plan else None,
+        run_out_tiles=str(c.get("tiles", {}).get("run_out", "auto")),
+        plans=tuple(
+            PlanOption(
+                p["name"],
+                float(p["exchanges"]) if "exchanges" in p else None,
+                float(p.get("dining_dollars", 0.0)),
+                float(p["price"]),
+            )
+            for p in c.get("plans", [])
+        ),
     )

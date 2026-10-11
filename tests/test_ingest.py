@@ -400,3 +400,77 @@ def test_empty_raw_dir_returns_empty_frame(tmp_path):
     assert df.empty
     assert list(df.columns) == OUTPUT_COLUMNS
     assert report.total_rows == 0
+
+
+# ---------------------------------------------------------------------------
+# Rows that are not purchases, late posting, and the dining day
+# ---------------------------------------------------------------------------
+
+
+def test_zero_amount_row_is_not_a_purchase(tmp_path):
+    cfg = base_cfg(tmp_path)
+    write_csv(
+        cfg.raw_dir,
+        "Dining Dollars_statement_2026-01-01_to_2026-01-31.csv",
+        [
+            ("2026-01-05 14:17:00", "Alumni Hall_Snack", 0.0, 100.0),
+            ("2026-01-05 14:19:00", "Alumni Hall_Snack", -2.4, 97.6),
+        ],
+    )
+    df, _ = load_transactions(cfg)
+
+    assert list(df["kind"]) == ["adjustment", "usage"]
+    assert pd.isna(df["dd_class"].iloc[0]) or df["dd_class"].iloc[0] is None
+
+
+def test_row_that_posted_late_is_not_three_balance_jumps(tmp_path):
+    cfg = base_cfg(tmp_path)
+    write_csv(
+        cfg.raw_dir,
+        "Dining Dollars_statement_2026-01-01_to_2026-03-31.csv",
+        [
+            ("2026-01-10 10:00:00", "Deposit", 200.0, 200.0),
+            ("2026-01-12 20:00:00", "Market", -3.5, 156.5),  # charged weeks later: its balance follows Feb 10
+            ("2026-01-17 12:00:00", "Cafe", -10.0, 190.0),
+            ("2026-02-10 18:00:00", "Cafe", -30.0, 160.0),
+            ("2026-03-15 19:00:00", "Cafe", -6.5, 150.0),
+        ],
+    )
+    df, report = load_transactions(cfg)
+
+    assert report.chain_breaks == []
+    (late,) = report.late_posted
+    assert late["description"] == "Market" and late["amount"] == pytest.approx(-3.5)
+    assert late["after"] == pd.Timestamp("2026-02-10 18:00:00") and late["before"] == pd.Timestamp("2026-03-15 19:00:00")
+    assert df.loc[df["description"] == "Market", "date"].iloc[0].isoformat() == "2026-01-12"  # still counted on its own date
+
+
+def test_a_real_jump_is_still_a_jump(tmp_path):
+    cfg = base_cfg(tmp_path)
+    write_csv(
+        cfg.raw_dir,
+        "Dining Dollars_statement_2026-01-01_to_2026-03-31.csv",
+        [
+            ("2026-01-10 10:00:00", "Deposit", 200.0, 200.0),
+            ("2026-01-12 20:00:00", "Market", -3.5, 150.0),  # fits nowhere
+            ("2026-01-17 12:00:00", "Cafe", -10.0, 140.0),
+        ],
+    )
+    _, report = load_transactions(cfg)
+
+    assert len(report.chain_breaks) == 1 and report.late_posted == []
+
+
+def test_purchase_after_midnight_belongs_to_the_night_before(tmp_path):
+    cfg = base_cfg(tmp_path)  # late_night_end = 4: the dining day starts at 4 AM
+    write_csv(
+        cfg.raw_dir,
+        "Dining Dollars_statement_2026-08-01_to_2026-08-31.csv",
+        [
+            ("2026-08-30 00:10:00", "Market", -8.0, 92.0),
+            ("2026-08-30 04:00:00", "Market", -1.0, 91.0),
+        ],
+    )
+    df, _ = load_transactions(cfg)
+
+    assert [d.isoformat() for d in df["date"]] == ["2026-08-29", "2026-08-30"]

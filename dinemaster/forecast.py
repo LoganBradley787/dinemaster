@@ -69,6 +69,12 @@ _ZERO = 1e-6
 
 _DEFAULT_BAND = (10, 90)
 
+#: A pot counts as safe when at least this share of simulated semesters still has some left.
+SAFE_CHANCE = 0.9
+
+#: Exchanges count as "going unused" when the forecast leaves at least this share of the plan (and at least one).
+SURPLUS_SHARE = 0.05
+
 
 # ---------------------------------------------------------------------------
 # history
@@ -449,3 +455,126 @@ def forecast(df: pd.DataFrame, cfg: Config) -> Forecast:
         dd=pot("DD", "dining dollars", left.dd_left, "dd_spend", "dd_spend_rate"),
         band=band, simulations=simulations,
     )
+
+
+def balances_on(fc: Forecast, day: date) -> tuple[float, float]:
+    """(meal exchanges, dining dollars) expected at the start of `day`.
+
+    Known exactly for the day after the last observed day. For later days the days in between
+    are not in the data yet and are assumed to have gone at the usual rate for their weekday.
+    """
+    def at(pf: PotForecast) -> float:
+        if not pf.available:
+            return pf.start_balance
+        before = min(max(day - timedelta(days=1), pf.expected.index[0]), pf.expected.index[-1])
+        return float(pf.expected.loc[before])
+
+    return at(fc.me), at(fc.dd)
+
+
+# ---------------------------------------------------------------------------
+# where the unused swipes are
+# ---------------------------------------------------------------------------
+
+_SHORT_DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
+#: `swipe_gaps` names the light days only when they hold at least this share of the swipe-less days.
+GAP_SHARE = 0.6
+#: ...and only once there are this many swipe-less days to speak of.
+GAP_MIN_DAYS = 3
+
+
+def weekday_span(weekdays: list[int]) -> str:
+    """Weekday numbers as a short label: [4, 5, 6] -> "Fri–Sun", [5, 6, 0] -> "Sat–Mon", [1, 4] -> "Tue, Fri"."""
+    days = sorted(set(weekdays))
+    if not days:
+        return ""
+    if len(days) == 7:
+        return "every day"
+    for first in days:  # a run may wrap from Sunday into Monday
+        run = [(first + i) % 7 for i in range(len(days))]
+        if sorted(run) == days:
+            return _SHORT_DAYS[first] if len(days) == 1 else f"{_SHORT_DAYS[run[0]]}–{_SHORT_DAYS[run[-1]]}"
+    return ", ".join(_SHORT_DAYS[d] for d in days)
+
+
+@dataclass(frozen=True)
+class SwipeGaps:
+    """Which days of the week the unused exchanges come from (see `swipe_gaps`).
+
+    The week is split into *light* days (weekdays that go without a swipe more often than
+    days do overall) and the rest. Counts are over the observed days (away days left out when `cfg.exclude_away`).
+
+    Fields:
+        light, other: labels for the two groups ("Fri–Sun", "Mon–Thu").
+        light_days, other_days: observed days in each group.
+        light_swiped, other_swiped: of those, days with at least one swipe.
+        light_rate, other_rate: swipes a day in each group.
+        zero_days: observed days with no swipe; light_zero: how many of them were light days.
+        left_light, left_other: days of each group still to come (away days left out).
+        reason: set when there is no clear pattern to report (too few swipe-less days, or they
+            are not concentrated on the light days); the numbers are still filled in.
+    """
+
+    light: str
+    other: str
+    light_days: int
+    other_days: int
+    light_swiped: int
+    other_swiped: int
+    light_rate: float
+    other_rate: float
+    zero_days: int
+    light_zero: int
+    left_light: int
+    left_other: int
+    reason: str | None
+
+
+def swipe_gaps(df: pd.DataFrame, cfg: Config) -> SwipeGaps | None:
+    """Where the swipe-less days fall in the week, or None without enough history."""
+    hist = observed_days(df, cfg)
+    if hist.empty or hist["me"].sum() <= 0:
+        return None
+    skipped = (hist["me"] <= 0).groupby(hist["weekday"]).mean()  # share of each weekday with no swipe
+    overall = float((hist["me"] <= 0).mean())
+    light_set = [int(wd) for wd, share in skipped.items() if share > overall]
+    if not light_set or len(light_set) == len(skipped):
+        return None
+    is_light = hist["weekday"].isin(light_set)
+    light, other = hist[is_light], hist[~is_light]
+    zero = hist["me"] <= 0
+    zero_days, light_zero = int(zero.sum()), int((zero & is_light).sum())
+
+    o = observed_through(cfg, df)
+    future = [o + timedelta(days=i) for i in range(1, (cfg.semester_end - o).days + 1)]
+    future = [d for d in future if not (cfg.exclude_away and cfg.is_away(d))]
+    left_light = sum(1 for d in future if d.weekday() in light_set)
+
+    reason = None
+    if zero_days < GAP_MIN_DAYS:
+        reason = "hardly any days without a swipe"
+    elif light_zero < GAP_SHARE * zero_days:
+        reason = "days without a swipe are spread through the week"
+    return SwipeGaps(
+        light=weekday_span(light_set),
+        other=weekday_span([wd for wd in range(7) if wd not in light_set]),
+        light_days=len(light), other_days=len(other),
+        light_swiped=int((light["me"] > 0).sum()), other_swiped=int((other["me"] > 0).sum()),
+        light_rate=float(light["me"].mean()), other_rate=float(other["me"].mean()),
+        zero_days=zero_days, light_zero=light_zero,
+        left_light=left_light, left_other=len(future) - left_light,
+        reason=reason,
+    )
+
+
+def at_risk(pf: PotForecast) -> bool:
+    """Running out before semester end is a real possibility for this pot."""
+    return pf.available and pf.prob_lasts is not None and pf.prob_lasts < SAFE_CHANCE
+
+
+def going_unused(cfg: Config, me: PotForecast) -> bool:
+    """The opposite problem: the exchanges are safe and a real number of them is set to expire."""
+    if not me.available or len(me.expected) <= 1 or at_risk(me) or me.leftover_p50 is None:
+        return False
+    return me.leftover_p50 >= max(1.0, SURPLUS_SHARE * cfg.starting_me)

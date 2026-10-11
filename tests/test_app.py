@@ -99,7 +99,7 @@ start = 2026-01-14
 end = 2026-05-09
 """
 
-TABS = ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan math", "What-if", "Data"]
+TABS = ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan size", "Plan math", "What-if", "Data"]
 
 # The fixed "today" the richer tests pin the as-of date to, and the day their exports end.
 AS_OF = date(2026, 9, 14)
@@ -289,7 +289,7 @@ def test_daily_plan_tab_follows_the_weekday_pattern_and_toggles_dining_dollars(t
     assert "today" in headline and "tomorrow" in headline
     with_dd = text_of(at)
     assert "meals from dining dollars" in with_dd
-    assert "Spend-down: both pots at zero on the last day" in with_dd
+    assert "#### Spend-down" in with_dd
     assert "both reach zero on Dec 18" in with_dd
     assert "\\$" in with_dd and "$" not in with_dd.replace("\\$", "")  # every dollar sign is escaped
     fortnight = next(t.value for t in at.table if "Mon" in t.value.columns and str(t.value.index[0]).startswith("Week of"))
@@ -400,3 +400,34 @@ def test_markers_are_drawn_on_balance_charts():
     assert fig.layout.annotations[-2].yshift != fig.layout.annotations[-1].yshift  # neighbours don't overlap
 
     assert len(charts.add_markers(charts.go.Figure(), dataclasses.replace(cfg, markers=())).layout.shapes) == 0
+
+
+def test_plan_size_tab_and_unused_exchange_banner(tmp_path, monkeypatch):
+    config_path = write_config(tmp_path)
+    config_path.write_text(
+        config_path.read_text().replace("dd_leftover_flag = 15.0", "dd_leftover_flag = 15.0\nprice = 2190.0\ndd_in_price = 300.0")
+        + '\n[[plans]]\nname = "Block 160"\nexchanges = 160\ndining_dollars = 300.0\nprice = 2190.0\n'
+        + '\n[[plans]]\nname = "Block 100"\nexchanges = 100\ndining_dollars = 300.0\nprice = 1600.0\n'
+    )
+    write_semester(tmp_path)
+
+    at = run_app_as_of(monkeypatch, config_path)
+
+    assert not at.exception
+    text = text_of(at)
+    assert "meal exchanges unused on Dec 18" in text and "of the plan" in text
+    assert "Using the exchanges before they expire" in text and "uses them all" in text
+    sizes = next(t.value for t in at.table if "Food cost" in t.value.columns)
+    assert list(sizes.index) == ["Block 160 (yours)", "Block 100"]
+    assert sizes.loc["Block 160 (yours)", "At your usage"].endswith("unused")
+
+
+def test_stale_data_is_called_out_and_today_is_left_alone(tmp_path, monkeypatch):
+    config_path = write_config(tmp_path)
+    write_semester(tmp_path)
+
+    at = run_app_as_of(monkeypatch, config_path, as_of=COVERED_THROUGH + timedelta(days=12))
+
+    assert not at.exception
+    assert any("12 days old" in e.value for e in at.error)
+    assert not any("today" in h.value for h in at.subheader)

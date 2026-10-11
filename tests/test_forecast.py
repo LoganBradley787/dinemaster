@@ -596,3 +596,66 @@ def test_forecast_chart_without_a_forecast(tmp_path):
     assert isinstance(fig, go.Figure)
     fig = fcc.forecast_chart(f.dd, None, cfg, "Dining dollars", "$")
     assert isinstance(fig, go.Figure)
+
+
+# ---------------------------------------------------------------------------
+# outlook, carried-forward balances, and where the unused swipes are
+# ---------------------------------------------------------------------------
+
+
+def weekday_heavy(d: date) -> int:
+    """Two swipes Monday to Thursday, none Friday to Sunday."""
+    return 2 if d.weekday() <= THU else 0
+
+
+def test_weekday_span_labels():
+    assert fc.weekday_span([FRI, SAT, SUN]) == "Fri–Sun"
+    assert fc.weekday_span([SAT, SUN, MON]) == "Sat–Mon"
+    assert fc.weekday_span([TUE]) == "Tue"
+    assert fc.weekday_span([TUE, FRI]) == "Tue, Fri"
+    assert fc.weekday_span(list(range(7))) == "every day"
+
+
+def test_swipe_gaps_names_the_light_days(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cover(tmp_path, FOUR_WEEKS)
+    gaps = fc.swipe_gaps(me_history(weekday_heavy), cfg)
+
+    assert (gaps.light, gaps.other) == ("Fri–Sun", "Mon–Thu")
+    assert (gaps.light_days, gaps.light_swiped, gaps.other_days, gaps.other_swiped) == (12, 0, 16, 16)
+    assert (gaps.zero_days, gaps.light_zero) == (12, 12)
+    assert gaps.light_rate == 0 and gaps.other_rate == 2
+    assert gaps.left_light + gaps.left_other == (E - FOUR_WEEKS).days
+    assert gaps.reason is None
+
+
+def test_swipe_gaps_without_a_pattern(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cover(tmp_path, FOUR_WEEKS)
+
+    assert fc.swipe_gaps(me_history(lambda d: 1), cfg) is None  # every weekday the same
+    assert fc.swipe_gaps(make_df([]), cfg) is None
+    one_off = fc.swipe_gaps(me_history(lambda d: 0 if d == S else 1), cfg)  # a single day without a swipe
+    assert one_off.reason == "hardly any days without a swipe"
+
+
+def test_going_unused_and_at_risk(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cover(tmp_path, FOUR_WEEKS)
+    light = fc.forecast(me_history(lambda d: 1), cfg)  # 160 exchanges at one a day: about 40 left over
+    heavy = fc.forecast(me_history(lambda d: 3), cfg)  # runs out long before the end
+
+    assert fc.going_unused(cfg, light.me) and not fc.at_risk(light.me)
+    assert fc.at_risk(heavy.me) and not fc.going_unused(cfg, heavy.me)
+    assert not fc.going_unused(replace(cfg, starting_me=1000.0), fc.forecast(make_df([]), cfg).me)
+
+
+def test_balances_on_carries_the_usual_rate_forward(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cover(tmp_path, FOUR_WEEKS)
+    f = fc.forecast(me_history(lambda d: 1), cfg)
+    start = f.me.start_balance
+
+    assert fc.balances_on(f, FOUR_WEEKS + timedelta(days=1))[0] == pytest.approx(start)  # the day after the data: known
+    assert fc.balances_on(f, FOUR_WEEKS + timedelta(days=4))[0] == pytest.approx(start - 3)  # three unseen days at 1 a day
+    assert fc.balances_on(f, S)[0] == pytest.approx(start)  # never before the data

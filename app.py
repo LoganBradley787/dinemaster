@@ -22,14 +22,14 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from dinemaster import budget, compare, compare_charts, forecast_charts, habits, habits_charts, recap
+from dinemaster import budget, compare, compare_charts, forecast_charts, habits, habits_charts, plans, recap
 from dinemaster import charts as c
 from dinemaster import forecast as fcast
 from dinemaster import metrics as m
 from dinemaster.calendar_sync import CalendarResult, apply_calendar
 from dinemaster.config import ROOT, Config, load_config
 from dinemaster.export_links import build_links, latest_by_account
-from dinemaster.freshness import data_through
+from dinemaster.freshness import at_observed, data_through, days_behind, is_stale
 from dinemaster.ingest import load_transactions
 from dinemaster.tiles import ago, build_page_html
 from dinemaster.tiles import chance as chance_text
@@ -355,68 +355,105 @@ def forecast_tab(cfg: Config, daily: pd.DataFrame, fc: fcast.Forecast) -> None:
             st.caption(f"Note: {pf.reason}.")
 
 
-def plan_tab(cfg: Config, fc: fcast.Forecast) -> None:
-    """A meal count for every remaining day, weighted by weekday, plus the spend-down pace."""
+def plan_tab(cfg: Config, df: pd.DataFrame, fc: fcast.Forecast) -> None:
+    """What each weekly rate leaves unused, then a meal count for every remaining day."""
     o, profile = fc.observed_through, fc.profile
-    start = o + timedelta(days=1)
-    me_left, dd_left = fc.me.start_balance, fc.dd.start_balance
+    known = o + timedelta(days=1)
     today = cfg.as_of
+    end = short(cfg.semester_end)
 
-    mode = st.radio("Plan with", ["Exchanges + dining dollars", "Exchanges only"], horizontal=True, key="plan_mode")
-    plan = budget.daily_budget(cfg, me_left, dd_left, profile, start, include_dd=mode != "Exchanges only")
-    info = plan.attrs
+    if fcast.going_unused(cfg, fc.me):
+        st.markdown("#### Using the exchanges before they expire")
+        expected_unused = float(fc.me.expected.iloc[-1])
+        ladder = budget.rate_ladder(cfg, fc.me.start_balance, expected_unused, known)
+        each = cfg.exchange_price
+        for line in budget.ladder_lines(ladder):
+            st.markdown(f"- {line}")
+        if ladder.rungs:
+            st.table(
+                pd.DataFrame(
+                    {
+                        "Exchanges a week": [str(rate) for rate, _ in ladder.rungs],
+                        f"Unused on {end}": [str(unused) for _, unused in ladder.rungs],
+                        **({"Worth": [f"\\${unused * each:,.0f}" for _, unused in ladder.rungs]} if each else {}),
+                    }
+                ).set_index("Exchanges a week")
+            )
+        gaps = fcast.swipe_gaps(df, cfg)
+        if gaps is not None and gaps.reason is None:
+            st.markdown(
+                f"**Where they go unused:** {gaps.zero_days} days so far had no swipe, and {gaps.light_zero} of them were "
+                f"{gaps.light} days. On {gaps.light} you swiped on {gaps.light_swiped} of {gaps.light_days} days "
+                f"({gaps.light_rate:.2f} a day); on {gaps.other}, {gaps.other_swiped} of {gaps.other_days} "
+                f"({gaps.other_rate:.2f} a day). {gaps.left_light} {gaps.light} days are left."
+            )
 
-    st.subheader(budget.today_line(plan, today))
-    if plan.empty or info["reason"]:
-        st.caption(f"Nothing to plan: {info['reason']}.")
+    st.markdown("#### Day by day")
+    if is_stale(cfg, df):
+        st.warning(
+            f"Your data ends {short(o)}, {days_behind(cfg, df)} days ago. That is too old to say what today should "
+            "look like. Get new data on the Configuration page."
+        )
     else:
-        parts = f"{info['me_meals']} exchanges"
-        if info["include_dd"]:
-            parts += f" + {info['dd_meals']} meals from dining dollars"
-        pattern = "spread evenly (no weekday pattern yet)" if info["uniform"] else "more on your usual heavy days"
-        st.caption(
-            f"{info['total']} meals to use ({parts}) over {info['usable_days']} days, "
-            f"{short(plan.index[0])} – {short(plan.index[-1])}: {pattern}, never more than {info['cap']} in a day."
-        )
-        if info["surplus"]:
-            st.warning(
-                f"Even at {info['cap']} meals every day, {info['surplus']} meals would go unused by semester end."
-            )
-        if (today - o).days > 1:
+        start = max(known, m.clamp_as_of(cfg))
+        me_left, dd_left = fcast.balances_on(fc, start)
+        modes = ["Exchanges only", "Exchanges + dining dollars"]
+        mode = st.radio("Plan with", modes, index=0 if cfg.dd_rollover else 1, horizontal=True, key="plan_mode")
+        plan = budget.daily_budget(cfg, me_left, dd_left, profile, start, include_dd=mode != "Exchanges only")
+        info = plan.attrs
+
+        st.subheader(budget.today_line(plan, today))
+        if plan.empty or info["reason"]:
+            st.caption(f"Nothing to plan: {info['reason']}.")
+        else:
+            parts = f"{info['me_meals']} exchanges"
+            if info["include_dd"]:
+                parts += f" + {info['dd_meals']} meals from dining dollars"
+            pattern = "spread evenly (no weekday pattern yet)" if info["uniform"] else "more on your usual heavy days"
             st.caption(
-                f"The data ends {short(o)}, so the plan starts {short(start)} and assumes nothing eaten since. "
-                "Update the data for a sharper plan."
+                f"This is what using everything up would take: {info['total']} meals ({parts}) over "
+                f"{info['usable_days']} days, {short(plan.index[0])} – {short(plan.index[-1])}: {pattern}, never more "
+                f"than {info['cap']} in a day."
             )
+            if info["surplus"]:
+                st.warning(
+                    f"Even at {info['cap']} meals every day, {info['surplus']} meals would go unused by semester end."
+                )
+            if start > known:
+                st.caption(
+                    f"The data ends {short(o)}. The plan starts today and assumes {short(known)} – "
+                    f"{short(start - timedelta(days=1))} went the way those days of the week usually do "
+                    f"(about {fc.me.start_balance - me_left:.0f} exchanges). Get new data for a sharper plan."
+                )
 
-        first = max(today, plan.index[0])
-        fortnight = [d for d in (first + timedelta(days=i) for i in range(14)) if d <= plan.index[-1]]
-        if fortnight:
-            st.markdown("#### Next 14 days")
-            grid: dict[str, dict[str, str]] = {}
-            for d in fortnight:
-                row = grid.setdefault(f"Week of {short(d - timedelta(days=d.weekday()))}", dict.fromkeys(habits.WEEKDAYS, ""))
-                planned = "away" if plan.at[d, "away"] else str(int(plan.at[d, "meals"]))
-                row[habits.WEEKDAYS[d.weekday()]] = f"{short(d)} · {planned}"
-            st.table(pd.DataFrame.from_dict(grid, orient="index"))
+            fortnight = [d for d in (plan.index[0] + timedelta(days=i) for i in range(14)) if d <= plan.index[-1]]
+            if fortnight:
+                st.markdown("#### Next 14 days")
+                grid: dict[str, dict[str, str]] = {}
+                for d in fortnight:
+                    row = grid.setdefault(f"Week of {short(d - timedelta(days=d.weekday()))}", dict.fromkeys(habits.WEEKDAYS, ""))
+                    planned = "away" if plan.at[d, "away"] else str(int(plan.at[d, "meals"]))
+                    row[habits.WEEKDAYS[d.weekday()]] = f"{short(d)} · {planned}"
+                st.table(pd.DataFrame.from_dict(grid, orient="index"))
 
-        st.markdown("#### The plan by day of the week")
-        usable = plan[~plan["away"]]
-        per_weekday = usable.groupby("weekday")["meals"].agg(["mean", "count"]).reindex(list(budget.WEEKDAY_NAMES))
-        usual = profile.set_index("weekday")["meals_rate"].reindex(list(budget.WEEKDAY_NAMES))
-        st.table(
-            pd.DataFrame(
-                {
-                    "Planned meals / day": [fmt(x, digits=1) if pd.notna(x) else "—" for x in per_weekday["mean"]],
-                    "Your usual meals / day": [fmt(x, digits=2) for x in usual.fillna(0.0)],
-                    "Days left": [str(int(n)) if pd.notna(n) else "0" for n in per_weekday["count"]],
-                },
-                index=habits.WEEKDAYS,
-            ).T
-        )
-        st.caption("Each remaining day gets a share in proportion to how much you usually eat on that weekday.")
+            st.markdown("#### The plan by day of the week")
+            usable = plan[~plan["away"]]
+            per_weekday = usable.groupby("weekday")["meals"].agg(["mean", "count"]).reindex(list(budget.WEEKDAY_NAMES))
+            usual = profile.set_index("weekday")["meals_rate"].reindex(list(budget.WEEKDAY_NAMES))
+            st.table(
+                pd.DataFrame(
+                    {
+                        "Planned meals / day": [fmt(x, digits=1) if pd.notna(x) else "—" for x in per_weekday["mean"]],
+                        "Your usual meals / day": [fmt(x, digits=2) for x in usual.fillna(0.0)],
+                        "Days left": [str(int(n)) if pd.notna(n) else "0" for n in per_weekday["count"]],
+                    },
+                    index=habits.WEEKDAYS,
+                ).T
+            )
+            st.caption("Each remaining day gets a share in proportion to how much you usually eat on that weekday.")
 
-    st.markdown("#### Spend-down: both pots at zero on the last day")
-    sd = budget.spend_down(cfg, me_left, dd_left, profile, start)
+    st.markdown("#### Spend-down")
+    sd = budget.spend_down(cfg, fc.me.start_balance, fc.dd.start_balance, profile, known)
     st.markdown(esc(sd.sentence))
     if sd.reason is None:
         s1, s2, s3, s4, s5 = st.columns(5)
@@ -425,15 +462,62 @@ def plan_tab(cfg: Config, fc: fcast.Forecast) -> None:
         s3.metric("Meals / day", fmt(sd.meals_per_day, digits=2))
         s4.metric("Set aside for snacks", fmt(sd.snack_reserve, digits=0, prefix="$"))
         s5.metric("DD left unplanned", fmt(sd.dd_unallocated, digits=2, prefix="$"))
+        if cfg.dd_rollover:
+            detail = "They carry into spring, so no dining-dollar meals are planned."
+        else:
+            detail = (
+                f"That leaves ${sd.dd_for_meals:,.2f} for {sd.dd_meals} meals at ${cfg.meal_price:,.2f}. The daily plan "
+                "above turns every dining dollar into meals, so it counts more dining-dollar meals than this does."
+            )
         st.caption(
             esc(
-                f"{sd.usable_days} usable days ({sd.weeks:.1f} weeks) through {short(sd.end)}. Of ${dd_left:,.2f} in "
-                f"dining dollars, about ${sd.snack_reserve:,.0f} is expected to go to snacks at your usual weekday "
-                f"rates, leaving ${sd.dd_for_meals:,.2f} for {sd.dd_meals} meals at ${cfg.meal_price:,.2f}. "
-                "The daily plan above turns every dining dollar into meals, so it counts more dining-dollar meals "
-                "than this does."
+                f"{sd.usable_days} usable days ({sd.weeks:.1f} weeks) from {short(known)} through {short(sd.end)}. Of "
+                f"${fc.dd.start_balance:,.2f} in dining dollars, about ${sd.snack_reserve:,.0f} is expected to go to "
+                f"snacks at your usual weekday rates. {detail}"
             )
         )
+
+
+def plan_size_tab(cfg: Config, fc: fcast.Forecast) -> None:
+    """Every plan the school sells against the number of exchanges this semester is on pace to use."""
+    fits = plans.plan_fits(cfg, fc.me)
+    if fits.reason:
+        st.caption(f"Nothing to compare: {fits.reason}.")
+        return
+    st.markdown(
+        f"This semester you are on pace to use about **{fits.used:.0f} exchanges** "
+        f"(likely {fits.used_lo:.0f} – {fits.used_hi:.0f})."
+    )
+
+    def usd(x: float) -> str:
+        return f"\\${x:,.0f}"  # st.table renders markdown, so a bare "$" would start LaTeX math
+
+    rows = {}
+    for r in fits.rows:
+        if r.exchanges is None:
+            fit = "unlimited"
+        elif r.short:
+            fit = f"{r.short:.0f} short ({usd(r.extra)} at {usd(cfg.meal_price)} a meal)"
+        else:
+            fit = f"{r.unused:.0f} unused"
+        versus = "—" if r.versus_current is None or r.current else f"{usd(abs(r.versus_current))} {'less' if r.versus_current < 0 else 'more'}"
+        rows[r.name + (" (yours)" if r.current else "")] = {
+            "Price": usd(r.price),
+            "Exchanges": "unlimited" if r.exchanges is None else f"{r.exchanges:.0f}",
+            "Dining dollars": usd(r.dining_dollars),
+            "At your usage": fit,
+            "Food cost": usd(r.food_cost),
+            "Per meal eaten": "n/a" if r.per_meal is None else f"\\${r.per_meal:,.2f}",
+            "Against yours": versus,
+        }
+    st.table(pd.DataFrame.from_dict(rows, orient="index"))
+    st.caption(
+        esc(
+            "Food cost is the plan price, less the dining dollars it comes with, plus the meals it would not cover "
+            f"bought at ${cfg.meal_price:,.2f} each (the meal price in your settings). It rests on this semester's "
+            "usage alone, so it is only as good as this semester is typical."
+        )
+    )
 
 
 def habits_tab(cfg: Config, df: pd.DataFrame) -> None:
@@ -600,14 +684,20 @@ def calendar_section(cfg: Config, cal: CalendarResult) -> None:
 
 
 def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
-    dc = m.day_counts(cfg)
-    metrics = m.compute_metrics(df, cfg)
+    # Every figure is worked out at the last day the data covers: the days after it are unknown,
+    # not days on which nothing was eaten.
+    at_o = at_observed(cfg, df)
+    now = m.day_counts(cfg)
+    dc = m.day_counts(at_o)
+    metrics = m.compute_metrics(df, at_o)
     bal = metrics.balances
     variant = "away" if cfg.exclude_away else "plain"
+    behind = days_behind(cfg, df)
+    fc = fcast.forecast(df, cfg)
+    end = short(cfg.semester_end)
 
     st.title("DineMaster")
-    through = data_through(cfg, df)
-    st.caption(f"As of {short(dc.a)}" + (f" · data through {short(through)}" if through else ""))
+    st.caption(f"As of {short(dc.a)}" + (f", the last day in your data ({ago(behind)})" if behind else ""))
 
     # --- Alerts -----------------------------------------------------------
     raw_has_csvs = any(cfg.raw_dir.glob("*.csv")) if cfg.raw_dir.exists() else False
@@ -616,8 +706,13 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
             f"No dining data found yet. Drop your UVA statement CSV exports into `{cfg.raw_dir}` "
             "(one file per account) and reload this page."
         )
-    if dc.notice:
-        st.warning(dc.notice)
+    if now.notice:
+        st.warning(now.notice)
+    if not df.empty and is_stale(cfg, df):
+        st.error(
+            f"Your data is {behind} days old (it ends {short(dc.a)}). Everything below describes that day, not "
+            "today. Get new data on the Configuration page."
+        )
     if bal.me_warning:
         st.warning(esc(f"ME reconciliation: {bal.me_warning}"))
     if bal.dd_warning:
@@ -630,9 +725,19 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
             f"The dining site's balance changed {len(jumps)} time(s) this semester with no transaction to explain it. "
             'See "Balance jumps" on the Data tab.'
         )
-    dd_leftover_note = metrics.burn[variant]["dd"].leftover_note
-    if dd_leftover_note:
-        st.info(esc(f"DD leftover: {dd_leftover_note}"))
+    unused = fcast.going_unused(cfg, fc.me)
+    if unused:
+        each = cfg.exchange_price
+        cost = f", about ${round(fc.me.leftover_p50) * each:,.0f} of the plan" if each else ""
+        st.warning(
+            esc(
+                f"On pace to leave {fc.me.leftover_p50:.0f} meal exchanges unused on {end} "
+                f"(likely {fc.me.leftover_lo:.0f} – {fc.me.leftover_hi:.0f}){cost}. See the Daily plan tab."
+            )
+        )
+    if fc.dd.available and fc.dd.leftover_p50 is not None and fc.dd.leftover_p50 >= cfg.dd_leftover_flag:
+        fate = "It carries into spring." if cfg.dd_rollover else "It will be lost."
+        st.info(esc(f"About ${fc.dd.leftover_p50:,.0f} in dining dollars is likely to be left on {end}. {fate}"))
 
     # --- KPI row ------------------------------------------------------------
     dd_me_equiv = cfg.round_meals(bal.dd_left / cfg.meal_price)
@@ -640,22 +745,43 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
     pooled_delta = metrics.targets[variant].pooled_delta
     k1, k2, k3, k4, k5 = st.columns(5)
     k1.metric("ME left", fmt(bal.me_left, digits=0))
-    k2.metric("DD left", fmt(bal.dd_left, digits=2, prefix="$"), f"≈{dd_me_equiv:.0f} meals")
-    k3.metric("Semester progress", f"{metrics.progress * 100:.0f}%")
-    k4.metric("Strict pace (ahead/behind)", fmt(strict_delta, signed=True) + " meals" if strict_delta is not None else "n/a")
-    k5.metric("Pooled pace (ahead/behind)", fmt(pooled_delta, signed=True) + " meals" if pooled_delta is not None else "n/a")
-
-    daily = m.daily(df, cfg)
-    fc = fcast.forecast(df, cfg)
-
-    tab_balances, tab_forecast, tab_daily, tab_usage, tab_habits, tab_compare, tab_plan, tab_whatif, tab_data = st.tabs(
-        ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan math", "What-if", "Data"]
+    k2.metric("DD left", fmt(bal.dd_left, digits=2, prefix="$"), None if cfg.dd_rollover else f"≈{dd_me_equiv:.0f} meals")
+    k3.metric("Semester progress", f"{now.progress * 100:.0f}%")
+    k4.metric(
+        "Exchanges left vs. an even pace",
+        fmt(strict_delta, signed=True) if strict_delta is not None else "n/a",
+        help="How many more (+) or fewer (-) exchanges are left than if they were used evenly through the semester.",
     )
+    if fc.me.available and fc.me.leftover_p50 is not None:
+        k5.metric(
+            f"Exchanges unused on {end}",
+            f"{fc.me.leftover_p50:.0f}",
+            f"likely {fc.me.leftover_lo:.0f} – {fc.me.leftover_hi:.0f}",
+            delta_color="off",
+        )
+        # On its own line: a metric's small print is cut off when it is longer than the column.
+        if unused:
+            k5.caption(f"{chance_text(1 - fc.me.prob_lasts)} chance you use them all")
+        else:
+            k5.caption(f"{chance_text(fc.me.prob_lasts)} chance they last")
+    elif cfg.dd_rollover:
+        k5.metric(f"Exchanges unused on {end}", "n/a")
+    else:
+        k5.metric("Pooled pace (ahead/behind)", fmt(pooled_delta, signed=True) + " meals" if pooled_delta is not None else "n/a")
+
+    daily = m.daily(df, at_o)
+
+    (tab_balances, tab_forecast, tab_daily, tab_usage, tab_habits, tab_compare, tab_size, tab_plan, tab_whatif,
+     tab_data) = st.tabs(
+        ["Balances", "Forecast", "Daily plan", "Usage", "Habits", "Compare", "Plan size", "Plan math", "What-if", "Data"]
+    )  # fmt: skip
 
     with tab_forecast:
         forecast_tab(cfg, daily, fc)
     with tab_daily:
-        plan_tab(cfg, fc)
+        plan_tab(cfg, df, fc)
+    with tab_size:
+        plan_size_tab(cfg, fc)
     with tab_habits:
         habits_tab(cfg, df)
     with tab_compare:
@@ -694,17 +820,18 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
             width="stretch",
         )
 
-        pooled_actual = daily["me_bal"] + daily["dd_bal"] / cfg.meal_price
-        pooled_total = metrics.targets[variant].pooled_total
-        pooled_ideal = (
-            m.ideal_series(cfg, pooled_total, cfg.exclude_away) if pooled_total is not None else pd.Series(dtype=float)
-        )
-        st.plotly_chart(
-            c.balance_chart(
-                cfg, dc.a, pooled_actual, pooled_ideal, None, c.COLORS["pooled"], "Pooled (ME + DD/price)", "Meal-equivalents left"
-            ),
-            width="stretch",
-        )
+        if not cfg.dd_rollover:  # dollars that carry over are not meals to pool with the exchanges
+            pooled_actual = daily["me_bal"] + daily["dd_bal"] / cfg.meal_price
+            pooled_total = metrics.targets[variant].pooled_total
+            pooled_ideal = (
+                m.ideal_series(cfg, pooled_total, cfg.exclude_away) if pooled_total is not None else pd.Series(dtype=float)
+            )
+            st.plotly_chart(
+                c.balance_chart(
+                    cfg, dc.a, pooled_actual, pooled_ideal, None, c.COLORS["pooled"], "Pooled (ME + DD/price)", "Meal-equivalents left"
+                ),
+                width="stretch",
+            )
 
     # --- Usage tab --------------------------------------------------------
     with tab_usage:
@@ -719,9 +846,12 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
 
         loc_col1, loc_col2 = st.columns(2)
         if not df.empty:
-            me_counts = (
-                df[(df["pot"] == "ME") & (df["kind"].isin(["usage", "reversal"]))].groupby("description").size()
-            )
+            # Net of refunds (a refunded swipe is not a visit), this semester through the last day of data.
+            me_rows = df[
+                (df["pot"] == "ME") & df["kind"].isin(["usage", "reversal"]) & (df["date"] >= cfg.data_cutoff) & (df["date"] <= dc.a)
+            ]
+            me_counts = -me_rows.groupby("description")["amount"].sum()
+            me_counts = me_counts[me_counts > 0]
         else:
             me_counts = pd.Series(dtype=float)
         with loc_col1:
@@ -834,7 +964,10 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
 
     # --- What-if tab --------------------------------------------------------
     with tab_whatif:
-        st.caption("Projects from tomorrow through semester end, consuming ME first, then DD at the configured meal price.")
+        st.caption(
+            f"Projects from {short(dc.a + timedelta(days=1))}, the day after your data ends, through semester end, "
+            "consuming ME first, then DD at the configured meal price."
+        )
         meals_per_day = st.slider("Meals per day", min_value=0.0, max_value=4.0, value=2.0, step=0.25)
         wi = m.what_if(cfg, dc.a, bal.me_left, bal.dd_left, meals_per_day, cfg.exclude_away)
         if wi.reason:
@@ -869,7 +1002,7 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
         st.markdown("#### Balance jumps")
         st.caption(
             "Times when an account's balance on the dining site moved by more or less than the transaction "
-            "listed, as if the site changed the balance without listing why. Usually a correction by the dining office."
+            "listed, as if the site changed the balance without listing why."
         )
         if report.chain_breaks:
             jumps_df = pd.DataFrame(
@@ -886,6 +1019,28 @@ def main(cfg: Config, df: pd.DataFrame, report, cal: CalendarResult) -> None:
             st.dataframe(jumps_df, width="stretch", hide_index=True)
         else:
             st.caption("None found.")
+
+        if report.late_posted:
+            st.markdown("#### Posted late")
+            st.caption(
+                "Purchases whose balance shows they were charged well after the date they carry. They are counted "
+                "on the date listed, and the balance check reads them in the order they were charged."
+            )
+            st.dataframe(
+                pd.DataFrame(
+                    {
+                        "Dated": f"{p['timestamp']:%b %d, %Y}",
+                        "Account": p["account"],
+                        "Transaction": p["description"],
+                        "Amount": f"{p['amount']:,.2f}",
+                        "Charged after": f"{p['after']:%b %d, %Y}",
+                        "and before": f"{p['before']:%b %d, %Y}" if p["before"] is not None else "—",
+                    }
+                    for p in report.late_posted
+                ),
+                width="stretch",
+                hide_index=True,
+            )
 
         st.markdown("#### Reconciliation")
         st.dataframe(

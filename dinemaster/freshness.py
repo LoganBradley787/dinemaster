@@ -8,6 +8,7 @@ and when it was downloaded, whichever is earlier.
 from __future__ import annotations
 
 import calendar
+import dataclasses
 import re
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -16,6 +17,9 @@ import pandas as pd
 
 from .config import Config
 from .ingest import _pot_for_account
+
+#: Data older than this many days is too old to say anything about today.
+STALE_AFTER_DAYS = 7
 
 _RANGE_END = re.compile(r"_to_(\d{4})-(\d{2})-(\d{2})")
 
@@ -61,3 +65,23 @@ def observed_through(cfg: Config, df: pd.DataFrame) -> date:
     a = min(max(cfg.as_of, cfg.semester_start - timedelta(days=1)), cfg.semester_end)
     through = data_through(cfg, df)
     return min(a, through) if through else a
+
+
+def at_observed(cfg: Config, df: pd.DataFrame) -> Config:
+    """`cfg` with its as-of date pulled back to the last observed day.
+
+    Pace and burn figures are worked out here, so days the exports do not cover yet are not
+    counted as days on which nothing was eaten.
+    """
+    return dataclasses.replace(cfg, as_of=observed_through(cfg, df))
+
+
+def days_behind(cfg: Config, df: pd.DataFrame) -> int:
+    """Whole days between the last observed day and the (clamped) as-of date; 0 when current."""
+    a = min(max(cfg.as_of, cfg.semester_start - timedelta(days=1)), cfg.semester_end)
+    return max(0, (a - observed_through(cfg, df)).days)
+
+
+def is_stale(cfg: Config, df: pd.DataFrame) -> bool:
+    """True when the data is too old for "today" advice (more than `STALE_AFTER_DAYS` behind)."""
+    return days_behind(cfg, df) > STALE_AFTER_DAYS

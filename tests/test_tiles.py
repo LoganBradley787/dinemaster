@@ -104,22 +104,98 @@ def test_verdict_uses_forecast_range_and_chance(cfg):
     groups, data = page(cfg, steady_rows())
     verdict = groups[0].tiles[0]
     f = data.forecast.me
-    assert verdict.size == "large" and verdict.pre == "On track to have"
+    assert verdict.size == "large" and verdict.pre == "On pace to leave" and verdict.color == T.ORANGE
     assert verdict.value == T.num(f.leftover_p50, 0)
-    assert "extra meal exchanges on Dec 18" in verdict.post
-    assert f"likely {T.num(f.leftover_lo, 0)}" in verdict.post and "chance they last" in verdict.post
-    assert verdict.back.pre == "Chance they last to Dec 18" and verdict.back.value == T.chance(f.prob_lasts)
+    assert "meal exchanges unused on Dec 18" in verdict.post
+    assert f"likely {T.num(f.leftover_lo, 0)}" in verdict.post
+    assert verdict.back.pre == "Chance you use them all by Dec 18" and verdict.back.value == T.chance(1 - f.prob_lasts)
     assert "each day of the week" in verdict.back.post
 
 
+def test_a_small_leftover_is_on_track_not_waste(cfg):
+    groups, data = page(replace(cfg, starting_me=140), steady_rows())
+    verdict = groups[0].tiles[0]
+    assert not T.going_unused(data)
+    assert verdict.pre in ("On track to have", "Meal exchanges run out")
+
+
 def test_dining_dollars_hold_with_range_and_leftover_fate(cfg):
-    groups, data = page(cfg, steady_rows())
+    groups, data = page(replace(cfg, run_out_tiles="always"), steady_rows())
     hold = tile(groups, "Dining dollars will hold")
     assert hold.value == T.chance(data.forecast.dd.prob_lasts)
     assert "chance of lasting" in hold.post and "likely $" in hold.post
     left = tile(groups, "Left over on Dec 18")
     assert left.value == T.money(data.forecast.dd.leftover_p50) and "goes unspent" in left.post
     assert left.back.pre == "That is enough for" and "meal" in left.back.value
+
+
+def test_unused_exchanges_get_a_ladder_a_cost_and_the_days_they_come_from(cfg):
+    groups, data = page(replace(cfg, plan_price=2190.0, plan_dd_in_price=300.0), steady_rows())
+    assert T.going_unused(data) and not T.run_out_matters(data)
+    ladder = tile(groups, "To use them all", "pace")
+    assert ladder.lines[0].startswith("You use about ") and "uses them all" in " ".join(ladder.lines)
+    assert ladder.back.value == T.num(data.ladder.needed_per_week)
+    unused = round(data.forecast.me.leftover_p50)
+    cost = tile(groups, "Unused exchanges cost about", "pace")
+    assert cost.value == T.money(unused * 11.8125) and cost.post == f"{unused} at $11.81 each"
+    gap = tile(groups, "Days with no swipe", "pace")
+    assert gap.post.startswith("Sat days")  # the steady rows never swipe on a Saturday
+    even = tile(groups, "Against an even pace", "pace")
+    assert even.color == T.ORANGE and "more exchanges left" in even.post
+    text = faces(groups)
+    assert "Two meals every day" not in text and "You can eat" not in text and "Dining dollars will hold" not in text
+
+
+def test_dining_dollars_running_short_does_not_ration_meals_while_exchanges_go_unused(cfg):
+    rows = steady_rows() + [dd(d, 9.0, "snack", "Market", hour=21) for d in days()]  # $9 a day: gone long before the end
+    groups, data = page(cfg, rows)
+    assert T.going_unused(data) and T.run_out_matters(data) and not T.meal_run_out_matters(data)
+    text = faces(groups)
+    assert "Dining dollars run out" in text or "Dining dollars will hold" in text
+    assert "You can eat" not in text and "Two meals every day" not in text and "To use them all" in text
+
+
+def test_no_plan_price_no_cost_tile(cfg):
+    groups, _ = page(replace(cfg, plan_price=None), steady_rows())
+    assert "Unused exchanges cost" not in faces(groups)
+
+
+def test_run_out_tiles_come_back_when_running_out_is_a_risk(cfg):
+    groups, data = page(cfg, heavy_rows())
+    assert T.run_out_matters(data) and not T.going_unused(data)
+    text = faces(groups)
+    assert "You can eat" in text and "To use them all" not in text
+    hidden, _ = page(replace(cfg, run_out_tiles="never"), heavy_rows())
+    assert "You can eat" not in faces(hidden)
+
+
+def test_days_the_data_does_not_cover_are_not_zero_usage_days(cfg):
+    _, current = page(cfg, steady_rows())
+    _, later = page(replace(cfg, as_of=AS_OF + timedelta(days=5)), steady_rows(), today=AS_OF + timedelta(days=5))
+    v = "away"
+    assert later.behind == 6 and not later.stale and later.plan is not None
+    assert later.metrics.targets[v].strict_delta == current.metrics.targets[v].strict_delta
+    assert later.metrics.burn[v]["me"].rate == current.metrics.burn[v]["me"].rate
+    assert later.now.dr == current.now.dr - 5  # the calendar itself does move on
+    assert later.plan.index[0] == AS_OF + timedelta(days=5)  # the plan starts today...
+    usual = current.forecast.me.start_balance - later.plan.attrs["me_meals"]
+    assert 5 <= usual <= 9  # ...after about a swipe a day (three on the Thursday) for the days in between
+
+
+def test_stale_data_says_so_and_drops_todays_plan(cfg):
+    when = AS_OF + timedelta(days=10)
+    groups, data = page(replace(cfg, as_of=when), steady_rows(), today=when)
+    assert data.stale and data.plan is None
+    first = groups[0].tiles[0]
+    assert (first.pre, first.value, first.color) == ("Your data is", "11 days old", T.RED)
+    assert "Today's plan" not in faces(groups)
+
+
+def test_rollover_means_exchanges_first(cfg):
+    groups, data = page(replace(cfg, dd_rollover=True, run_out_tiles="always"), steady_rows())
+    assert data.plan.attrs["dd_meals"] == 0 and data.spend.dd_meals == 0
+    text = faces(groups)
+    assert "counting dining dollars" not in text and "≈" not in text and "with dining dollars" not in text
 
 
 def test_rollover_changes_leftover_wording(cfg):
@@ -177,7 +253,7 @@ def test_plan_tile_shows_away_days(cfg):
 
 
 def test_spend_down_sentence_and_weekly_numbers(cfg):
-    groups, data = page(cfg, steady_rows())
+    groups, data = page(replace(cfg, starting_me=140), steady_rows())
     spend = tile(groups, "To finish at zero")
     assert spend.size == "large" and " ".join(spend.lines) == data.spend.sentence
     assert spend.back.pre == "Every week until Dec 18"

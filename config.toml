@@ -9,8 +9,10 @@ data_cutoff = 2026-08-01  # transactions before this date are ignored in metrics
 starting_me = 160
 starting_dd = 360.0       # $300 base + $60 promotional
 meal_price = 15.0         # assumed $ per meal paid in DD
-dd_rollover = false       # does unspent DD carry into spring?
-dd_leftover_flag = 15.0   # warn if projected DD leftover >= this and rollover is off
+dd_rollover = true        # does unspent DD carry into spring?
+dd_leftover_flag = 15.0   # mention projected DD leftover when it is >= this
+price = 2190.0            # what the plan costs per semester (optional; puts a dollar figure on unused exchanges)
+dd_in_price = 300.0       # dining dollars that price pays for (promotional dollars are free)
 
 [plan.dd_rounding]
 mode = "floor"            # floor | round | ceil
@@ -30,7 +32,8 @@ meal_threshold = 8.0      # DD purchase at a dining spot >= this is a meal; othe
 # DD purchases at these locations are always snacks (regex, case-insensitive)
 snack_patterns = ["Gastons", "Supply 1819", "Vending", "Bodega"]
 load_patterns = ["^Deposit$"]          # plan loads / top-ups
-adjustment_patterns = ["(?i)revoke"]   # administrative, not usage
+# administrative, not usage: balances swept, restored or taken back by the dining office
+adjustment_patterns = ["(?i)revoke", "(?i)rollover", "(?i)\\bfix\\b"]
 
 [files]
 raw_dir = "raw-data"
@@ -100,6 +103,9 @@ away_patterns = ["(?i)break", "(?i)recess", "(?i)\\bhome\\b", "(?i)\\baway\\b", 
 marker_patterns = ["(?i)reading day", "(?i)exam", "(?i)finals?\\b"]
 cache_hours = 24        # how long a downloaded feed is reused before refetching
 
+[tiles]
+run_out = "auto"        # the "when will it run out" tiles: auto (only when running out is a real risk) | always | never
+
 [habits]
 late_night_start = 21   # hour (24h) when "late night" begins
 late_night_end = 4      # hour it ends (next morning)
@@ -112,5 +118,29 @@ end = 2025-12-18
 
 [[history.semesters]]
 name = "Spring 2026"
-start = 2026-01-14
+start = 2026-01-12
 end = 2026-05-09
+
+# Plans the school sells, for the "Plan size" tab. Leave out `exchanges` for an unlimited plan.
+[[plans]]
+name = "All Access"
+dining_dollars = 150.0
+price = 3670.0
+
+[[plans]]
+name = "Block 160"
+exchanges = 160
+dining_dollars = 300.0
+price = 2190.0
+
+[[plans]]
+name = "Block 100"
+exchanges = 100
+dining_dollars = 300.0
+price = 1600.0
+
+[[plans]]
+name = "Block 50"
+exchanges = 50
+dining_dollars = 300.0
+price = 1060.0

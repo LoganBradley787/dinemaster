@@ -34,7 +34,7 @@ def make_cfg(tmp_path, **overrides):
     base = replace(
         load_config(),
         semester_start=S, semester_end=E, data_cutoff=date(2026, 8, 1),
-        starting_me=160.0, starting_dd=360.0, meal_price=15.0,
+        starting_me=160.0, starting_dd=360.0, meal_price=15.0, dd_rollover=False,
         rounding_mode="floor", rounding_granularity=1.0,
         exclude_away=True, away_periods=(), max_meals_per_day=3,
         raw_dir=tmp_path, account_regex=r"^(?P<account>.+?)_statement",
@@ -576,3 +576,49 @@ def test_sentence_in_the_final_days_uses_totals_not_weekly_rates(tmp_path):
 def test_sentence_when_the_semester_is_over(tmp_path):
     sd = bg.spend_down(make_cfg(tmp_path), 20, 80.0, make_profile(), E + timedelta(days=3))
     assert sd.sentence == "The semester is over — nothing left to spread out."
+
+
+# ---------------------------------------------------------------------------
+# rollover and the rate ladder
+# ---------------------------------------------------------------------------
+
+
+def test_dining_dollars_that_roll_over_are_not_planned_as_meals(tmp_path):
+    cfg = make_cfg(tmp_path, dd_rollover=True)
+    sd = bg.spend_down(cfg, 100.0, 300.0, make_profile(), E - timedelta(days=69))
+
+    assert sd.dd_meals == 0 and sd.dd_meals_per_week == 0
+    assert sd.sentence == (
+        "Exchanges expire and dining dollars carry over, so swipe first — use about 10 exchanges a week to reach zero on Dec 18."
+    )
+
+
+def test_rate_ladder_runs_from_the_usual_rate_to_using_them_all(tmp_path):
+    cfg = make_cfg(tmp_path)
+    ladder = bg.rate_ladder(cfg, 109.0, 29.0, E - timedelta(days=69))  # 70 days = 10 weeks
+
+    assert (ladder.left, ladder.usable_days, ladder.weeks) == (109, 70, 10.0)
+    assert ladder.usual_per_week == pytest.approx(8.0) and ladder.needed_per_week == pytest.approx(10.9)
+    assert ladder.rungs == ((8, 29), (9, 19), (10, 9), (11, 0))
+    assert ladder.per_extra == 10 and ladder.reason is None
+    assert bg.ladder_lines(ladder) == [
+        "You use about 8 a week. All 109 takes 10.9.",
+        "8 a week leaves 29, 9 leaves 19, 10 leaves 9, 11 uses them all.",
+        "One more swipe a week saves 10 exchanges.",
+    ]
+
+
+def test_rate_ladder_keeps_both_ends_when_the_gap_is_wide(tmp_path):
+    ladder = bg.rate_ladder(make_cfg(tmp_path), 150.0, 120.0, E - timedelta(days=69))
+
+    assert len(ladder.rungs) == bg.MAX_RUNGS
+    assert ladder.rungs[0][0] == 3 and ladder.rungs[-1] == (15, 0)
+
+
+def test_rate_ladder_has_nothing_to_say_when_nothing_goes_unused(tmp_path):
+    cfg = make_cfg(tmp_path)
+
+    assert bg.rate_ladder(cfg, 100.0, 0.0, E - timedelta(days=69)).reason == "your usual rate already uses them all"
+    assert bg.rate_ladder(cfg, 0.0, 0.0, E - timedelta(days=69)).reason == "no exchanges left"
+    assert bg.rate_ladder(cfg, 50.0, 10.0, E + timedelta(days=1)).reason == "no days left"
+    assert bg.ladder_lines(bg.rate_ladder(cfg, 0.0, 0.0, E)) == []

@@ -9,7 +9,7 @@ import itertools
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -48,6 +48,7 @@ class IngestReport:
     files: list[dict] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     chain_breaks: list[dict] = field(default_factory=list)
+    late_posted: list[dict] = field(default_factory=list)  # rows the site listed out of balance order
     ledger_path: Path | None = None
     total_rows: int = 0
 
@@ -162,6 +163,8 @@ def _classify_kind(desc: str, amount: float, cfg: Config) -> str:
             return "adjustment"
     if amount > 0:
         return "reversal"
+    if amount == 0:
+        return "adjustment"  # a voided or declined tap: nothing was bought
     return "usage"
 
 
@@ -207,7 +210,45 @@ def _resolve_tie_order(prev_balance: float | None, group_rows: list[tuple]) -> l
     return list(best)
 
 
-def _chain_breaks_for_account(account: str, df_acc: pd.DataFrame) -> list[dict]:
+def _links(before: tuple | None, row: tuple) -> bool:
+    """True when `row`'s balance follows from `before`'s (or there is no row before it)."""
+    return before is None or abs(before[2] + row[1] - row[2]) <= CHAIN_TOL
+
+
+def _move_late_rows(ordered: list[tuple]) -> tuple[list[tuple], list[tuple]]:
+    """Put rows that posted late back where their balance says they belong.
+
+    A purchase can carry the date it was made but a balance from weeks later, when the site
+    finally charged it. Read by date, that one row looks like three unexplained balance jumps.
+    A row is moved only when taking it out closes the chain where it sat and it fits exactly
+    one other place. Returns (rows in balance order, [(row, row before it, row after it)]).
+    """
+    rows, moved = list(ordered), []
+    for _ in range(len(rows)):
+        for i in range(1, len(rows)):
+            row, before = rows[i], rows[i - 1]
+            after = rows[i + 1] if i + 1 < len(rows) else None
+            if _links(before, row) or (after is not None and not _links(before, after)):
+                continue
+            rest = rows[:i] + rows[i + 1 :]
+            fits = [
+                j
+                for j in range(1, len(rest) + 1)
+                if j != i and _links(rest[j - 1], row) and (j == len(rest) or _links(row, rest[j]))
+            ]
+            if len(fits) != 1:
+                continue
+            j = fits[0]
+            moved.append((row, rest[j - 1], rest[j] if j < len(rest) else None))
+            rows = rest[:j] + [row] + rest[j:]
+            break
+        else:
+            break
+    return rows, moved
+
+
+def _chain_breaks_for_account(account: str, df_acc: pd.DataFrame, late: list[dict] | None = None) -> list[dict]:
+    """Balance jumps in one account. Rows that only posted late are appended to `late` instead."""
     df_acc = df_acc.sort_values("timestamp", kind="stable")
     groups: list[list[tuple]] = []
     for _ts, grp in df_acc.groupby("timestamp", sort=True):
@@ -219,6 +260,20 @@ def _chain_breaks_for_account(account: str, df_acc: pd.DataFrame) -> list[dict]:
         best = _resolve_tie_order(prev_balance, grp)
         ordered.extend(best)
         prev_balance = best[-1][2]
+
+    ordered, moved = _move_late_rows(ordered)
+    if late is not None:
+        for row, before, after in moved:
+            late.append(
+                {
+                    "account": account,
+                    "timestamp": df_acc.loc[row[0], "timestamp"],
+                    "description": df_acc.loc[row[0], "description"],
+                    "amount": row[1],
+                    "after": df_acc.loc[before[0], "timestamp"],
+                    "before": df_acc.loc[after[0], "timestamp"] if after is not None else None,
+                }
+            )
 
     breaks = []
     prev_row = None
@@ -340,11 +395,13 @@ def load_transactions(cfg: Config) -> tuple[pd.DataFrame, IngestReport]:
         _classify_kind(desc, amount, cfg) for desc, amount in zip(df["description"], df["amount"])
     ]
     df["dd_class"] = _assign_dd_class(df, cfg)
-    df["date"] = df["timestamp"].apply(lambda ts: ts.date())
+    # The dining day: a purchase after midnight belongs to the night before (see Config.day_rollover_hour).
+    rollover = timedelta(hours=cfg.day_rollover_hour)
+    df["date"] = df["timestamp"].apply(lambda ts: (ts - rollover).date())
 
     chain_breaks: list[dict] = []
     for account, df_acc in df.groupby("account", sort=False):
-        chain_breaks.extend(_chain_breaks_for_account(account, df_acc))
+        chain_breaks.extend(_chain_breaks_for_account(account, df_acc, report.late_posted))
     report.chain_breaks = chain_breaks
 
     df = df[OUTPUT_COLUMNS].sort_values("timestamp", kind="stable").reset_index(drop=True)
