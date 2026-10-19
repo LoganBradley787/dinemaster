@@ -97,11 +97,15 @@ All numbers are correct for the last day that your data includes. DineMaster doe
 
 ### UVA only: download with one button
 
-On the data page, the "Get new data" button opens a browser window on the UVA dining site. Log in with NetBadge. DineMaster then downloads the CSV file for each account and puts it in `raw-data`.
+On the data page, the "Get new data" button logs in to the UVA dining site and downloads the CSV file for each account into `raw-data`.
 
-This button works only with the UVA dining site. The address and the account numbers are in the `[export]` section of `config.toml`, and they are mine. If your account numbers are different, change them. If you are not at UVA, delete the `login_url` line. The button then goes away, and you download the files yourself.
+It logs in with NetBadge and your UVA digital certificate (the one that was installed with eduroam), and it does not open a window. It opens a browser window only when the login needs you. Usually Duo is the reason: Duo trusts the browser for 30 days, and after that you approve it one time again. The data page tells you a few days before that happens.
 
-The button uses Google Chrome. Your password stays in the browser window. DineMaster does not read it or keep it.
+The app also does this by itself. When you open a page and the last try is more than `auto_hours` old (4 by default), it gets new data in the background. The top bar then says "updating", and the page reloads when the data is new. If the login needs you, the top bar says "update needs you", and you press "Get new data" one time.
+
+The button works only with the UVA dining site. The address and the account numbers are in the `[export]` section of `config.toml`, and they are mine. If your account numbers are different, change them. If you are not at UVA, delete the `login_url` line. The button then goes away, and you download the files yourself. To stop the automatic updates, set `auto_hours = 0`. If you log in with a password, delete `cert_button`.
+
+The button uses Google Chrome with its own profile in `data/browser-profile`. Your everyday Chrome is not changed. In that profile, Chrome can send your certificate to `virginia.edu` sites without asking (`cert_sites`). Your password and your certificate stay with Chrome. DineMaster does not read them or keep them.
 
 ### Optional: add your calendar
 
@@ -111,7 +115,7 @@ DineMaster uses events with names such as "break", "recess", "home", or "trip" a
 
 ## Your data stays on your computer
 
-DineMaster runs on your computer and sends no data to other computers. The app listens only on your own computer. Thus other computers on your network cannot open it. It connects to the dining site only when you click "Get new data". It connects to a calendar feed only if you put the address of the feed in `config.toml`. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
+DineMaster runs on your computer and sends no data to other computers. The app listens only on your own computer. Thus other computers on your network cannot open it. It connects to the dining site only when you click "Get new data", or by itself when you open the app and `auto_hours` is set. It connects to a calendar feed only if you put the address of the feed in `config.toml`. Git ignores the folders `raw-data/`, `data/`, and `calendar/`. Thus you cannot commit or push your personal data by accident.
 
 ## Settings
 

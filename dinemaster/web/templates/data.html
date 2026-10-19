@@ -10,7 +10,7 @@
 <section class="part slide" style="--i:3" id="get">
   <h2>get new data</h2>
   {%- if can_fetch %}
-  <p class="lead">Get new data opens a browser window on the dining site. Log in there if it asks. Each account's statement is then downloaded into <code>{{ cfg.raw_dir.name }}/</code>.</p>
+  <p class="lead">Get new data logs in to the dining site with no window and downloads each account's statement into <code>{{ cfg.raw_dir.name }}/</code>. A browser window opens only when the login needs you, as when Duo asks to approve the browser again.{% if cfg.export.auto_hours %} The app also does this by itself when you open it and the last try is {{ cfg.export.auto_hours | plural("hour") }} old.{% endif %}</p>
   {%- else %}
   <p class="lead">To add data, put new CSV exports into <code>{{ cfg.raw_dir }}</code>, then press Re-read files.</p>
   {%- endif %}
@@ -25,9 +25,10 @@
     </form>
   </div>
   {{ ui.notes(said["get"]) }}
-  <div class="fetch" id="fetch" data-state="{{ fetch.state }}" data-status="/data/fetch-status" aria-live="polite">
+  {{ ui.notes(duo_notes) }}
+  <div class="fetch" id="fetch" data-state="{{ fetch.state }}"{% if running %} data-fetch{% endif %} aria-live="polite">
     {%- if running %}
-    <p class="fetch-say">A browser window is open. Log in there if it asks, then wait. This page updates by itself.</p>
+    <p class="fetch-say">{% if fetch.quiet %}Getting new data with no window. If the login needs you, a browser window opens.{% else %}A browser window is open. Log in there if it asks, then wait.{% endif %} This page updates by itself.</p>
     <div class="progress" role="progressbar" aria-label="Getting new data"><i></i></div>
     <ul class="fetch-lines">{% for line in fetch.lines %}<li>{{ line }}</li>{% endfor %}</ul>
     {%- else %}
@@ -215,28 +216,4 @@
   {%- endif %}
 </section>
 
-{%- if running %}
-<script>
-// While a fetch runs: ask how it is going every two seconds, show its lines, reload when it ends.
-(() => {
-  const box = document.getElementById("fetch");
-  const list = box.querySelector(".fetch-lines");
-  const ask = async () => {
-    if (!box.isConnected) return; // this part of the page was replaced; its newer copy asks instead
-    try {
-      const s = await (await fetch(box.dataset.status, { cache: "no-store" })).json();
-      if (s.state !== "running") return location.reload();
-      list.textContent = "";
-      for (const line of s.lines) {
-        const li = document.createElement("li");
-        li.textContent = line;
-        list.append(li);
-      }
-    } catch (e) { /* the server may be busy; ask again */ }
-    setTimeout(ask, 2000);
-  };
-  setTimeout(ask, 2000);
-})();
-</script>
-{%- endif %}
 {% endblock %}

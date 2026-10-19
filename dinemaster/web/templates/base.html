@@ -27,6 +27,11 @@
       <span class="chip">{{ chrome.as_of }}</span>
       {%- endif %}
       <span class="fresh{% if chrome.old %} old{% endif %}">{{ chrome.fresh }}</span>
+      {%- if chrome.fetch == "running" %}
+      <a class="fetching" href="{{ ctx.url('/data') }}#get" data-fetch>updating</a>
+      {%- elif chrome.fetch == "needs_you" %}
+      <a class="fetching look" href="{{ ctx.url('/data') }}#get">update needs you</a>
+      {%- endif %}
       <nav class="theme" aria-label="Theme">
         {%- for name, href in chrome.themes %}
         <a href="{{ href }}" data-theme="{{ name }}"{% if theme == name %} aria-current="true"{% endif %}>{{ name }}</a>
