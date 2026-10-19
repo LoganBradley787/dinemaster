@@ -45,6 +45,9 @@ class ExportConfig:
     csv_param: str = "format=csv"
     login_url: str = ""  # set to enable the one-click fetch
     accounts: tuple[ExportAccount, ...] = ()
+    cert_button: str = ""  # login-page button the fetcher presses by itself (regex on its name); "" = never
+    cert_sites: tuple[str, ...] = ()  # Chrome site patterns the fetcher's browser may send a certificate to without asking
+    auto_hours: float = 0.0  # fetch by itself when the app is opened and the last try is this old; 0 = never
 
 
 @dataclass(frozen=True)
@@ -209,6 +212,9 @@ def load_config(path: Path | str = ROOT / "config.toml", root: Path = ROOT) -> C
             csv_param=exp.get("csv_param", "format=csv"),
             login_url=exp.get("login_url", ""),
             accounts=tuple(ExportAccount(a["name"], str(a["acct"])) for a in exp.get("accounts", [])),
+            cert_button=exp.get("cert_button", ""),
+            cert_sites=tuple(exp.get("cert_sites", [])),
+            auto_hours=float(exp.get("auto_hours", 0.0)),
         ),
         forecast=ForecastConfig(
             half_life_days=float(fc.get("half_life_days", 21.0)),

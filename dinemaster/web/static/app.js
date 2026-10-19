@@ -138,6 +138,7 @@
         old.replaceWith(script);
       });
       paintSliders(main);
+      followFetch();
       const again = where && find(where);
       if (again) {
         scrollBy(0, again.getBoundingClientRect().top - before);
@@ -168,6 +169,34 @@
       swapTo(url, document.activeElement && form.contains(document.activeElement) ? document.activeElement : form);
     });
   }
+
+  // While a fetch runs (the button's, or the one the app starts by itself when it opens): ask how it is
+  // going every two seconds, show its lines where the page lists them, and reload when it ends.
+  // A page swapped in by a choice (below) may show a fetch that started meanwhile, so it calls followFetch too.
+  let following = false;
+  function followFetch() {
+    if (following || !document.querySelector("[data-fetch]")) return;
+    following = true;
+    setTimeout(follow, 2000);
+  }
+  async function follow() {
+    if (!document.querySelector("[data-fetch]")) return (following = false); // a swapped-in page with no fetch running
+    try {
+      const s = await (await fetch("/data/fetch-status", { cache: "no-store" })).json();
+      if (s.state !== "running") return location.reload();
+      const list = document.querySelector(".fetch-lines");
+      if (list) {
+        list.textContent = "";
+        for (const line of s.lines) {
+          const li = document.createElement("li");
+          li.textContent = line;
+          list.append(li);
+        }
+      }
+    } catch (e) { /* the server may be busy; ask again */ }
+    setTimeout(follow, 2000);
+  }
+  followFetch();
 
   // Keep the current pivot item in view when the pivot scrolls sideways.
   const pivot = document.querySelector(".pivot");

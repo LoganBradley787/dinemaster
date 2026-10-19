@@ -40,6 +40,12 @@ code { font-family: inherit; font-size: inherit; color: var(--ink); overflow-wra
 @media (prefers-color-scheme: light) { :root:not([data-theme]) .theme a[data-theme="light"] { background: var(--ink); color: var(--bg); } }
 .status .reset { color: var(--ink); display: inline-flex; align-items: center; min-height: 40px; }
 .status .fresh.old { background: var(--problem); color: var(--on-fill); padding: 5px 10px; }
+/* a fetch running by itself, or one that stopped because the login needs you */
+.status .fetching { color: var(--ink); display: inline-flex; align-items: center; min-height: 40px; }
+.status .fetching[data-fetch] { animation: metro-pulse 1.6s var(--ease) infinite alternate; }
+.status .fetching.look { background: var(--look); color: var(--on-fill); padding: 5px 10px; min-height: 0; text-decoration: none; }
+@keyframes metro-pulse { from { opacity: 1; } to { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .status .fetching[data-fetch] { animation: none; } }
 .pivot { display: flex; gap: clamp(18px, 2.4vw, 34px); margin: 2px calc(var(--gutter) * -1) 0; padding: 0 var(--gutter) 6px;
   overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
 .pivot::-webkit-scrollbar { display: none; }

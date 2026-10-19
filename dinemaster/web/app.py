@@ -4,13 +4,16 @@ Routes:
     GET  /                    the Start screen (tiles)
     GET  /<slug>              a section: `pages/<slug>.build(ctx, request)` -> `templates/<slug>.html`
     POST /<slug>[/<action>]   `pages/<slug>.post(ctx, request, action, form)` -> a URL to redirect to
-    GET  /data/fetch-status   JSON: how the data page's background fetch is going
+    GET  /data/fetch-status   JSON: how the background fetch is going
     GET  /kit                 every component and chart-kit mark on one page (a reference for building sections)
     GET  /static/palette.css  the colour variables, written from dinemaster/palette.py
     /static/...               metro.css, app.js, sections/<slug>.css
 
 A section never edits this file or base.html: it owns its page module, template, optional
 stylesheet and charts module, all named after its slug.
+
+Showing any page may start a fetch with no window (`pages/data.auto_fetch`, when [export] auto_hours is set),
+so opening the app brings the data up to date; the top bar then says "updating" until it ends.
 """
 
 from __future__ import annotations
@@ -56,7 +59,8 @@ def chosen_theme(request: Request) -> tuple[str | None, bool]:
 
 
 def chrome(ctx: PageContext, path: str, query: dict[str, str] | None = None) -> dict:
-    """What the top bar says at the right: the as-of chip, how fresh the data is, and the theme switch.
+    """What the top bar says at the right: the as-of chip, how fresh the data is, a fetch that is running
+    or needs you, and the theme switch.
 
     `query` is the page's own query values (a section's `unit=meals`), kept by the theme links.
     """
@@ -72,6 +76,9 @@ def chrome(ctx: PageContext, path: str, query: dict[str, str] | None = None) -> 
     else:
         age = (ctx.today - ctx.through).days
         fresh, old = f"data through {fmt.day(ctx.through)}, {fmt.ago(age)}", age > 7
+    from .pages import data
+
+    fetch = data.last_fetch(ctx)["state"] if data._can_fetch(ctx) else None
     return {
         "as_of": f"as of {fmt.day(cfg.as_of)}",
         "changed": ctx.view_changed,
@@ -79,6 +86,7 @@ def chrome(ctx: PageContext, path: str, query: dict[str, str] | None = None) -> 
         "reset": path,
         "fresh": fresh,
         "old": old,
+        "fetch": fetch if fetch in ("running", "needs_you") else None,
         "themes": [(name, ctx.url(path, **own, theme=name)) for name in ("light", "dark")],
     }
 
@@ -105,6 +113,9 @@ def create_app(config_path: Path | None = None, today: Callable[[], date] | None
         return load_context(config_path, request.query_params, today() if today else None, calendar_cache)
 
     def render(request: Request, ctx: PageContext, template: str, view: dict, section: Section | None = None) -> Response:
+        from .pages import data
+
+        data.auto_fetch(ctx)
         css = f"sections/{section.slug}.css" if section else None
         theme, asked = chosen_theme(request)
         page = {
@@ -166,7 +177,7 @@ def create_app(config_path: Path | None = None, today: Callable[[], date] | None
 
     @app.get("/data/fetch-status", name="fetch_status")
     def fetch_status() -> dict:
-        """How the background fetch started on the data page is going (the page polls this)."""
+        """How the background fetch is going (a page polls this while one runs)."""
         from .pages import data
 
         return data.FETCH.status()

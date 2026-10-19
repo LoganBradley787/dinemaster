@@ -6,10 +6,11 @@ from __future__ import annotations
 import json
 import re
 import threading
-from datetime import date
+from datetime import date, datetime, timedelta
 
 import pytest
 
+from dinemaster.fetch import NEEDS_YOU
 from dinemaster.web import settings
 from dinemaster.web.context import load_context
 from dinemaster.web.pages import data as page
@@ -34,7 +35,7 @@ acct = "22"
 def fresh_state(monkeypatch):
     """Each test starts with no fetch, no messages and no links, and a launcher that must not be reached."""
 
-    def never(config_path, on_line):
+    def never(config_path, on_line, quiet=False):
         raise AssertionError("a test reached the real fetch launcher")
 
     monkeypatch.setattr(page, "run_fetch", never)
@@ -272,7 +273,7 @@ def test_fetch_runs_in_the_background_one_at_a_time(site, monkeypatch):
     client = site.client()
     go, seen = threading.Event(), []
 
-    def launcher(config_path, on_line):
+    def launcher(config_path, on_line, quiet=False):
         seen.append(config_path)
         on_line("Block 160 Meals: Sep 11 to Sep 14")
         assert go.wait(10)
@@ -289,9 +290,9 @@ def test_fetch_runs_in_the_background_one_at_a_time(site, monkeypatch):
     status = client.get("/data/fetch-status").json()
     assert status["state"] == "running" and status["lines"] == ["Downloaded Block 160 Meals: Sep 11 to Sep 14"]
     html = client.get("/data").text
-    assert "A browser window is open. Log in there if it asks, then wait." in html and 'role="progressbar"' in html
+    assert "Getting new data with no window. If the login needs you, a browser window opens." in html and 'role="progressbar"' in html
     assert "Getting new data</button>" in html and "disabled" in html and "Downloaded Block 160 Meals: Sep 11 to Sep 14" in html
-    assert '<meta http-equiv="refresh" content="5">' in html and "/data/fetch-status" in html and "<script>" in html
+    assert '<meta http-equiv="refresh" content="5">' in html and "data-fetch" in html and ">updating</a>" in html
 
     client.post("/data/fetch")  # a second press while it runs starts nothing
     assert seen == [site.config_path] and "A fetch is already running." in client.get("/data").text
@@ -303,7 +304,7 @@ def test_fetch_runs_in_the_background_one_at_a_time(site, monkeypatch):
     text = plain(html)
     assert "The fetch finished at" in text and "Downloaded Block 160 Meals: Sep 11 to Sep 14." in text
     assert "Dining Dollars: nothing in this range." in text and "Downloaded Dining Dollars" not in text
-    assert 'http-equiv="refresh"' not in html and "<script>" not in html and ">Get new data</button>" in html
+    assert 'http-equiv="refresh"' not in html and "data-fetch" not in html and ">Get new data</button>" in html
     client.post("/data/fetch")  # and it can run again afterwards
     page.FETCH.thread.join(10)
     assert len(seen) == 2
@@ -322,7 +323,7 @@ def test_fetch_failures_are_said_on_the_page(site, monkeypatch, outcome, said):
     with_export(site)
     client = site.client()
 
-    def launcher(config_path, on_line):
+    def launcher(config_path, on_line, quiet=False):
         if isinstance(outcome, Exception):
             raise outcome
         return outcome
@@ -330,7 +331,9 @@ def test_fetch_failures_are_said_on_the_page(site, monkeypatch, outcome, said):
     monkeypatch.setattr(page, "run_fetch", launcher)
     client.post("/data/fetch")
     page.FETCH.thread.join(10)
-    assert client.get("/data/fetch-status").json() == {"state": "failed", "lines": [], "error": said, "finished": page.FETCH.status()["finished"]}
+    assert client.get("/data/fetch-status").json() == {
+        "state": "failed", "quiet": True, "lines": [], "error": said, "finished": page.FETCH.status()["finished"],
+    }  # fmt: skip
     html = client.get("/data").text
     assert said in plain(html) and 'class="problem"' in html and "You can try again." in html
 
@@ -362,9 +365,177 @@ def test_run_fetch_starts_the_fetch_module_with_the_config(monkeypatch, tmp_path
     assert (code, err) == (1, "Fetch failed: nope\n") and lines == ["Block 160 Meals: Sep 11 to Sep 14"]
     assert started["cmd"][1:] == ["-m", "dinemaster.fetch"] and started["env"]["DINEMASTER_CONFIG"] == str(tmp_path / "config.toml")
     assert "killed" not in started
+    REAL_RUN_FETCH(tmp_path / "config.toml", lines.append, True)
+    assert started["cmd"][1:] == ["-m", "dinemaster.fetch", "--quiet"]
 
 
 REAL_RUN_FETCH = page.run_fetch  # taken at import, before any fixture replaces it
+
+
+def test_button_opens_a_window_only_when_the_quiet_run_needs_you(site, monkeypatch):
+    with_export(site)
+    client = site.client()
+    runs, go = [], threading.Event()
+
+    def launcher(config_path, on_line, quiet=False):
+        runs.append(quiet)
+        if quiet:
+            return NEEDS_YOU, "Needs you: Duo wants you to approve this browser again.\n"
+        assert go.wait(10)
+        on_line("Dining Dollars: Sep 12 to Sep 14")
+        return 0, ""
+
+    monkeypatch.setattr(page, "run_fetch", launcher)
+    client.post("/data/fetch")
+    for _ in range(200):
+        if runs == [True, False]:
+            break
+        threading.Event().wait(0.01)
+    html = client.get("/data").text
+    assert "A browser window is open. Log in there if it asks, then wait." in html and client.get("/data/fetch-status").json()["quiet"] is False
+    go.set()
+    page.FETCH.thread.join(10)
+    assert runs == [True, False] and page.FETCH.state == "done"
+    assert page.read_record(site.root / "data" / "last-fetch.json")["state"] == "done"
+
+
+def test_a_quiet_run_that_works_opens_no_window(site, monkeypatch):
+    with_export(site)
+    runs = []
+    monkeypatch.setattr(page, "run_fetch", lambda config_path, on_line, quiet=False: runs.append(quiet) or (0, ""))
+    site.client().post("/data/fetch")
+    page.FETCH.thread.join(10)
+    assert runs == [True] and page.FETCH.state == "done"
+
+
+def auto_site(site, hours="4"):
+    with_export(site)
+    site.edit_config('login_url = "https://dining.example.test/login.php?cid=1"\n', f'login_url = "https://dining.example.test/login.php?cid=1"\nauto_hours = {hours}\n')
+
+
+def test_opening_the_app_fetches_by_itself_and_never_opens_a_window(site, monkeypatch):
+    auto_site(site)
+    runs = []
+
+    def launcher(config_path, on_line, quiet=False):
+        runs.append(quiet)
+        return NEEDS_YOU, "Needs you: Duo wants you to approve this browser again.\n"
+
+    monkeypatch.setattr(page, "run_fetch", launcher)
+    client = site.client()
+    client.get("/")
+    page.FETCH.thread.join(10)
+    assert runs == [True] and page.FETCH.state == "needs_you"  # stopped: no window for a fetch nobody asked for
+    record = page.read_record(site.root / "data" / "last-fetch.json")
+    assert record["state"] == "needs_you" and "Duo" in record["error"]
+
+    html = client.get("/now").text
+    assert ">update needs you</a>" in html and 'href="/data#get"' in html and runs == [True]  # a recent try is not repeated
+    text = plain(client.get("/data").text)
+    assert "The data could not be updated by itself at" in text and "Duo wants you to approve this browser again. Press Get new data" in text
+
+    monkeypatch.setattr(page, "FETCH", page.Fetch())  # the app was stopped and opened again: the record still says so
+    assert ">update needs you</a>" in site.client().get("/").text and runs == [True]
+
+
+def test_an_old_try_is_tried_again_and_a_fresh_one_is_not(site, monkeypatch):
+    auto_site(site, hours="4")
+    runs = []
+    monkeypatch.setattr(page, "run_fetch", lambda config_path, on_line, quiet=False: runs.append(quiet) or (0, ""))
+    record = site.root / "data" / "last-fetch.json"
+    page.write_record(record, {"tried": (datetime.now() - timedelta(hours=3)).isoformat(), "state": "done", "error": None})
+    site.client().get("/")
+    assert page.FETCH.state == "idle" and runs == []
+    page.write_record(record, {"tried": (datetime.now() - timedelta(hours=5)).isoformat(), "state": "done", "error": None})
+    site.client().get("/")
+    page.FETCH.thread.join(10)
+    assert runs == [True] and page.read_record(record)["tried"] > datetime.now() - timedelta(minutes=1)
+
+
+def test_a_running_fetch_shows_in_the_top_bar_of_every_page(site, monkeypatch):
+    auto_site(site)
+    go = threading.Event()
+    monkeypatch.setattr(page, "run_fetch", lambda config_path, on_line, quiet=False: (go.wait(10), (0, ""))[1])
+    client = site.client()
+    html = client.get("/forecast").text
+    assert ">updating</a>" in html and "data-fetch" in html
+    go.set()
+    page.FETCH.thread.join(10)
+    assert ">updating</a>" not in client.get("/forecast").text
+
+
+def test_pressing_the_button_during_an_automatic_fetch_lets_it_open_a_window(site, monkeypatch):
+    auto_site(site)
+    runs, go = [], threading.Event()
+
+    def launcher(config_path, on_line, quiet=False):
+        runs.append(quiet)
+        if quiet:
+            assert go.wait(10)
+            return NEEDS_YOU, "Needs you: Duo wants you to approve this browser again.\n"
+        return 0, ""
+
+    monkeypatch.setattr(page, "run_fetch", launcher)
+    client = site.client()
+    client.get("/")  # starts the automatic one
+    client.post("/data/fetch")  # pressed while it runs: not refused
+    assert "already running" not in client.get("/data").text
+    go.set()
+    page.FETCH.thread.join(10)
+    assert runs == [True, False] and page.FETCH.state == "done"
+
+
+def test_a_record_that_cannot_be_saved_does_not_fetch_on_every_page(site, monkeypatch):
+    auto_site(site)
+    runs = []
+    monkeypatch.setattr(page, "run_fetch", lambda config_path, on_line, quiet=False: runs.append(quiet) or (1, "Fetch failed: nope\n"))
+    monkeypatch.setattr(page, "write_record", lambda path, record: None)  # the disk said no
+    client = site.client()
+    client.get("/")
+    page.FETCH.thread.join(10)
+    client.get("/")
+    client.get("/now")
+    assert runs == [True]
+
+
+def test_after_a_restart_the_record_says_what_came_down_and_when(site):
+    with_export(site)
+    yesterday = datetime.now() - timedelta(days=1)
+    page.write_record(site.root / "data" / "last-fetch.json", {
+        "tried": yesterday.isoformat(timespec="seconds"), "state": "done", "error": None,
+        "lines": ["Block 160 Meals: Sep 11 to Sep 14", "Dining Dollars: nothing in this range"],
+    })  # fmt: skip
+    text = plain(site.client().get("/data").text)
+    assert f"The fetch finished at {yesterday:%-I:%M %p} on {yesterday:%b} {yesterday.day}." in text
+    assert "Downloaded Block 160 Meals: Sep 11 to Sep 14." in text and "nothing new to download" not in text
+    assert not list((site.root / "data").glob("*.part"))
+
+
+def test_without_auto_hours_nothing_starts_by_itself(site):
+    with_export(site)
+    site.client().get("/")  # the fixture's launcher fails the test if it is reached
+    assert page.FETCH.state == "idle"
+
+
+@pytest.mark.parametrize(
+    ("days", "said"),
+    [
+        (10, None),
+        (3, "Duo stops trusting the fetcher's browser on Sep 17."),
+        (1, "Duo stops trusting the fetcher's browser tomorrow."),
+        (0, "Duo stops trusting the fetcher's browser today."),
+        (-2, "Duo no longer trusts the fetcher's browser."),
+    ],
+)
+def test_duo_running_out_is_said_ahead_of_time(site, monkeypatch, days, said):
+    with_export(site)
+    until = datetime.combine(AS_OF + timedelta(days=days), datetime.min.time()) + timedelta(hours=23)
+    monkeypatch.setattr(page, "duo_trusted_until", lambda profile: until)
+    text = plain(site.client().get("/data").text)
+    if said is None:
+        assert "trust" not in text
+    else:
+        assert said in text
 
 
 def test_reread_clears_the_calendar_cache(site):

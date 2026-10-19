@@ -65,6 +65,12 @@ end_param = "enddate"
 account_param = "acct"
 csv_param = "format=csv"           # added to a statement link to get the CSV file
 login_url = "https://connectvirginia.atriumcampus.com/login.php?cid=454"   # enables the Fetch button; delete to turn it off
+# Getting data with no window: press NetBadge's certificate button, let the fetcher's own browser send your
+# UVA certificate without asking, and fetch by itself when the app is opened and the last try is this many
+# hours old (0 = only when you press the button). A window opens only when Duo wants you again.
+cert_button = "certificate"
+cert_sites = ["[*.]virginia.edu"]
+auto_hours = 4
 
 # name must match the account name in the export file name; acct is the site's account number
 [[export.accounts]]

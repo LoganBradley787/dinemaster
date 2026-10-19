@@ -1,30 +1,35 @@
 """The `data` section: get new data, check that it is healthy, change the settings, see the calendar.
 
 GET  /data             the page (`build`)
-POST /data/fetch       start the one-click fetch in the background (a browser window opens for the login)
+POST /data/fetch       start the one-click fetch in the background (with no window; one opens only if the login needs you)
 POST /data/reread      read the export files and calendars again
 POST /data/links       build statement links from a pasted dining-site URL (kept in memory for a while, never saved)
 POST /data/settings    save the settings form to data/settings.json
 POST /data/reset       delete data/settings.json, back to config.toml
 GET  /data/fetch-status   (in web/app.py) `FETCH.status()` as JSON, for the page to poll
 
-The fetch takes minutes and waits for a person, so it runs on its own thread: `FETCH.start` returns at
-once and the page shows `FETCH.status()`. Tests replace `run_fetch`; nothing here opens a browser in a test.
+The fetch runs on its own thread: `FETCH.start` returns at once and the page shows `FETCH.status()`.
+It first runs with no window. If the login needs a person (Duo), the button then opens a window; a fetch
+the app started by itself (`auto_fetch`, when a page is opened) stops there and says so instead.
+How the last try ended is kept in data/last-fetch.json, so it outlives the app being stopped.
+Tests replace `run_fetch`; nothing here opens a browser in a test.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
 import threading
 import time
 from collections.abc import Callable
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from ...config import ROOT
 from ...export_links import build_links, latest_by_account
+from ...fetch import NEEDS_YOU, duo_trusted_until, profile_dir
 from ...freshness import STALE_AFTER_DAYS
 from .. import fmt, settings
 from ..charts import data as charts
@@ -34,18 +39,19 @@ from ..context import PageContext
 FETCH_TIMEOUT = 420  # seconds; the login alone may take five minutes
 LINKS_KEPT_FOR = 15 * 60  # seconds the pasted-URL links stay in memory
 POT_NAMES = {"ME": "Meal exchanges", "DD": "Dining dollars"}
+DUO_WARN_DAYS = 3  # say when Duo's trust in the fetcher's browser runs out this soon
 
 
 # --- the fetch job ------------------------------------------------------------------------------
 
 
-def run_fetch(config_path: Path, on_line: Callable[[str], None]) -> tuple[int, str]:
-    """Run `python -m dinemaster.fetch` to the end. Calls `on_line` for each line it prints.
+def run_fetch(config_path: Path, on_line: Callable[[str], None], quiet: bool = False) -> tuple[int, str]:
+    """Run `python -m dinemaster.fetch` (with --quiet: no window) to the end. Calls `on_line` for each line it prints.
 
     Returns (exit code, what it wrote to stderr). Raises TimeoutError after `FETCH_TIMEOUT` seconds.
     """
     proc = subprocess.Popen(
-        [sys.executable, "-m", "dinemaster.fetch"],
+        [sys.executable, "-m", "dinemaster.fetch", *(["--quiet"] if quiet else [])],
         cwd=ROOT,
         env={**os.environ, "DINEMASTER_CONFIG": str(config_path)},
         stdout=subprocess.PIPE,
@@ -76,24 +82,47 @@ def run_fetch(config_path: Path, on_line: Callable[[str], None]) -> tuple[int, s
     return code, "".join(errors)
 
 
+def _fetched(lines: list[str]) -> list[str]:
+    """The fetcher's lines as the page says them."""
+    return [line if "nothing in this range" in line else f"Downloaded {line}" for line in lines]
+
+
+def _when(at: datetime) -> str:
+    """A time, with the day when it is not today: "3:04 PM", "3:04 PM on Oct 18"."""
+    clock = f"{at:%-I:%M %p}"
+    return clock if at.date() == datetime.now().date() else f"{clock} on {fmt.day(at)}"
+
+
 class Fetch:
     """The one fetch this process may run at a time, and how the last one went."""
 
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self.state = "idle"  # idle | running | done | failed
+        self.state = "idle"  # idle | running | done | failed | needs_you
+        self.quiet = False  # running with no window right now
+        self.auto = False  # started by the app itself, and nobody has pressed the button since
         self.lines: list[str] = []
         self.error: str | None = None
+        self.started: datetime | None = None
         self.finished: datetime | None = None
         self.thread: threading.Thread | None = None
 
-    def start(self, config_path: Path) -> bool:
-        """Start a fetch on a background thread. False when one is already running."""
+    def start(self, config_path: Path, record: Path | None = None, auto: bool = False) -> bool:
+        """Start a fetch on a background thread. False when one is already running.
+
+        It runs with no window first; when that needs a person, the button's fetch (`auto` False) opens a
+        window, and an automatic one stops. Pressing the button while an automatic one runs makes it the
+        button's. How it ended is written to `record` when one is given.
+        """
         with self._lock:
             if self.state == "running":
+                if not auto and self.auto:
+                    self.auto = False
+                    return True
                 return False
-            self.state, self.lines, self.error, self.finished = "running", [], None, None
-            self.thread = threading.Thread(target=self._work, args=(config_path,), daemon=True)
+            self.state, self.quiet, self.auto, self.lines, self.error = "running", True, auto, [], None
+            self.started, self.finished = datetime.now(), None
+            self.thread = threading.Thread(target=self._work, args=(config_path, record), daemon=True)
         self.thread.start()
         return True
 
@@ -101,28 +130,94 @@ class Fetch:
         with self._lock:
             self.lines.append(line)
 
-    def _work(self, config_path: Path) -> None:
-        error = None
+    def _needs_window(self) -> bool:
+        """The quiet run needs a person: open a window if the button asked for this fetch."""
+        with self._lock:
+            if self.auto:
+                return False
+            self.quiet = False
+            return True
+
+    def _work(self, config_path: Path, record: Path | None) -> None:
+        error, state = None, "done"
         try:
-            code, stderr = run_fetch(config_path, self._add)
+            code, stderr = run_fetch(config_path, self._add, True)
+            if code == NEEDS_YOU and self._needs_window():
+                code, stderr = run_fetch(config_path, self._add, False)
         except TimeoutError:
-            error = "Fetch failed: it took too long."
+            error, state = "Fetch failed: it took too long.", "failed"
         except Exception as err:  # the launcher itself broke; say so on the page rather than die quietly
-            error = f"Fetch failed: {err}"
+            error, state = f"Fetch failed: {err}", "failed"
         else:
             if code:
                 error = stderr.strip().splitlines()[-1] if stderr.strip() else "Fetch failed."
+                state = "needs_you" if code == NEEDS_YOU else "failed"
+        finished = datetime.now()
+        if record is not None:  # before the state changes, so a page that sees it ended also sees the record
+            with self._lock:
+                lines = list(self.lines)
+            write_record(record, {"tried": finished.isoformat(timespec="seconds"), "state": state, "error": error, "lines": lines})
         with self._lock:
-            self.error = error
-            self.state = "failed" if error else "done"
-            self.finished = datetime.now()
+            self.error, self.state, self.finished = error, state, finished
 
     def status(self) -> dict:
-        """What the page shows: {"state", "lines", "error", "finished"}. Lines are ready to read."""
+        """What the page shows: {"state", "quiet", "lines", "error", "finished"}. Lines are ready to read."""
         with self._lock:
-            lines = [line if "nothing in this range" in line else f"Downloaded {line}" for line in self.lines]
-            finished = f"{self.finished:%-I:%M %p}" if self.finished else None
-            return {"state": self.state, "lines": lines, "error": self.error, "finished": finished}
+            finished = _when(self.finished) if self.finished else None
+            return {"state": self.state, "quiet": self.quiet, "lines": _fetched(self.lines), "error": self.error, "finished": finished}
+
+
+def record_path(ctx: PageContext) -> Path:
+    """Where how the last fetch ended is kept (next to the ledger, so git ignores it)."""
+    return ctx.cfg.ledger_path.parent / "last-fetch.json"
+
+
+def write_record(path: Path, record: dict) -> None:
+    """Save the record whole or not at all (a page may read it at any moment)."""
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        part = path.with_name(path.name + ".part")
+        part.write_text(json.dumps(record))
+        os.replace(part, path)
+    except OSError:
+        pass  # only a note for later; the fetch itself is done
+
+
+def read_record(path: Path) -> dict | None:
+    """{"tried": datetime, "state", "error", "lines"} from the last fetch that ended, or None."""
+    try:
+        record = json.loads(path.read_text())
+        return {"error": None, "lines": [], **record, "tried": datetime.fromisoformat(record["tried"])}
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
+def last_fetch(ctx: PageContext) -> dict:
+    """The fetch this app is running or ran, else the one the record remembers (from before the app restarted)."""
+    status = FETCH.status()
+    if status["state"] != "idle":
+        return status
+    record = read_record(record_path(ctx))
+    if record is None or record["state"] not in ("done", "failed", "needs_you"):
+        return status
+    return {**status, "state": record["state"], "error": record["error"], "lines": _fetched(record["lines"]), "finished": _when(record["tried"])}
+
+
+def auto_fetch(ctx: PageContext, now: datetime | None = None) -> bool:
+    """Start a fetch with no window when [export] auto_hours is set and the last try is at least that old.
+
+    Called whenever a page is shown, so opening the app brings the data up to date. True if one started.
+    The try this app made counts even if its record could not be saved, so it never repeats on every page.
+    """
+    hours = ctx.cfg.export.auto_hours
+    if hours <= 0 or not _can_fetch(ctx) or FETCH.state == "running":
+        return False
+    now = now or datetime.now()
+    record = read_record(record_path(ctx))
+    tries = [t for t in (record["tried"] if record else None, FETCH.started) if t is not None]
+    if tries and now - max(tries) < timedelta(hours=hours):
+        return False
+    return FETCH.start(ctx.config_path, record_path(ctx), auto=True)
 
 
 FETCH = Fetch()
@@ -245,8 +340,8 @@ def post(ctx: PageContext, request, action: str, form: dict) -> str:
     if action == "fetch":
         if not _can_fetch(ctx):
             _flash("get", kit.PROBLEM, "Set login_url and at least one account in the [export] section of config.toml first.")
-        elif not FETCH.start(ctx.config_path):
-            _flash("get", kit.LOOK, "A fetch is already running. Finish the login in the browser window that is open.")
+        elif not FETCH.start(ctx.config_path, record_path(ctx)):
+            _flash("get", kit.LOOK, "A fetch is already running. If a browser window is open, finish the login there.")
         return ctx.url("/data#get")
     if action == "reread":
         if ctx.calendar_cache is not None:
@@ -508,6 +603,10 @@ def _fetch_notes(fetch: dict) -> list[dict]:
     when = f" at {fetch['finished']}" if fetch["finished"] else ""
     if fetch["state"] == "failed":
         return [{"kind": kit.PROBLEM, "text": f"{_plain(fetch['error'])} Nothing else was downloaded. You can try again."}]
+    if fetch["state"] == "needs_you":
+        why = (fetch["error"] or "").removeprefix("Needs you: ").rstrip(".")
+        why = why[:1].upper() + why[1:] + ". " if why else ""
+        return [{"kind": kit.LOOK, "text": f"The data could not be updated by itself{when}. {why}Press Get new data and finish the login in the window."}]
     if fetch["state"] == "done":
         if not fetch["lines"]:
             return [{"kind": kit.GOOD, "text": f"The fetch finished{when}. There was nothing new to download."}]
@@ -515,11 +614,25 @@ def _fetch_notes(fetch: dict) -> list[dict]:
     return []
 
 
+def _duo_notes(ctx: PageContext) -> list[dict]:
+    """A heads-up when Duo is about to stop trusting the fetcher's browser (it then needs you once)."""
+    until = duo_trusted_until(profile_dir(ctx.cfg)) if _can_fetch(ctx) else None
+    if until is None:
+        return []
+    days = (until.date() - ctx.today).days
+    if days > DUO_WARN_DAYS:
+        return []
+    if days < 0:
+        return [{"kind": kit.LOOK, "text": "Duo no longer trusts the fetcher's browser. The next fetch opens a window for Duo."}]
+    when = "today" if days == 0 else "tomorrow" if days == 1 else f"on {fmt.day(until)}"
+    return [{"kind": kit.LOOK, "text": f"Duo stops trusting the fetcher's browser {when}. After that, the next fetch opens a window for Duo once."}]
+
+
 def build(ctx: PageContext, request) -> dict:
     flash = dict(FLASH)
     FLASH.clear()
     headline, sub = _headline(ctx)
-    fetch = FETCH.status()
+    fetch = last_fetch(ctx)
     return {
         "empty": not ctx.has_data,
         "headline": headline,
@@ -530,7 +643,8 @@ def build(ctx: PageContext, request) -> dict:
         "can_fetch": _can_fetch(ctx),
         "fetch": fetch,
         "running": fetch["state"] == "running",
-        "fetch_notes": _fetch_notes(fetch),
+        "fetch_notes": _fetch_notes(fetch) if fetch["state"] != "running" else [],
+        "duo_notes": _duo_notes(ctx),
         "accounts": _accounts(ctx),
         "by_hand": _by_hand(ctx),
         "health": _health(ctx),
